@@ -131,7 +131,7 @@ if __name__ == "__main__":
 
                     # logging.debug(f"Received NMEA utf-8: {nmea_sentence}")
 
-                    if nmea_sentence.startswith("$GPGGA") and ("GNGNS" in args.publish or "all" in args.publish):
+                    if (nmea_sentence.startswith("$GNGNS") and ("GNGNS" in args.publish or "all" in args.publish)):
                         logging.debug( f"NMEA GNGNS: {nmea_sentence}" )
                         nmea_data = pynmea2.parse(nmea_sentence)
 
@@ -234,7 +234,8 @@ if __name__ == "__main__":
                     # Diff. ref. station ID | (empty)      | No station ID
                     # Checksum             | *59           | Used to verify data integrity
 
-                    elif nmea_sentence.startswith("$GPGGA") and ("GPGGA" in args.publish or "all" in args.publish):
+                    elif (nmea_sentence.startswith("$GPGGA") and ("GPGGA" in args.publish or "all" in args.publish)):
+
                         # Parsing GPGGA sentence
                         logging.debug(f"Processing NMEA GPGGA: {nmea_sentence}")
                         nmea_data = pynmea2.parse(nmea_sentence)
