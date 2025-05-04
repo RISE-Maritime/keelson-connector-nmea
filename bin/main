@@ -129,7 +129,7 @@ if __name__ == "__main__":
                 try:
                     nmea_sentence = line.decode("utf-8")
 
-                    # logging.debug(f"Received NMEA utf-8: {nmea_sentence}")
+                    logging.debug(f"Received NMEA utf-8: {nmea_sentence}")
 
                     if (nmea_sentence.startswith("$GNGNS") and ("GNGNS" in args.publish or "all" in args.publish)):
                         logging.debug( f"NMEA GNGNS: {nmea_sentence}" )
@@ -210,7 +210,6 @@ if __name__ == "__main__":
                         logging.debug(f"...published on {key_exp_pub_location_fix}")
 
 
-                    
                     # Global Positioning System Fix Data
                     # Example NMEA sentence: 
                     # $GPGGA,074641.00,5726.151284,N,01201.950160,E,1,09,0.6,20.6,M,39.0,M,,*59
@@ -239,8 +238,6 @@ if __name__ == "__main__":
                         # Parsing GPGGA sentence
                         logging.debug(f"Processing NMEA GPGGA: {nmea_sentence}")
                         nmea_data = pynmea2.parse(nmea_sentence)
-
-                        logging.debug(f"Parsed NMEA GPGGA: {nmea_data.fields}")    
 
                         # Create a LocationFix payload
                         payload_location = LocationFix()
@@ -289,11 +286,33 @@ if __name__ == "__main__":
                         pub_hadop.put(envelope)
                         logging.debug(f"Published HDOP on {key_exp_pub_hadop}")
 
+                    elif (nmea_sentence.startswith("$GPGSA") and ("GPGSA" in args.publish or "all" in args.publish)):
+                        # Parsing GPGSA sentence
+                        logging.debug(f"Processing NMEA GPGSA: {nmea_sentence}")
+                        nmea_data = pynmea2.parse(nmea_sentence)
+
+                        logging.debug(f"Mode: {nmea_data.fields}")
+
+                        # Extracting satellite IDs
+                        satellite_ids = nmea_data.sv_prn_numbers
+                        logging.debug(f"Satellite IDs: {satellite_ids}")
+
+
+
+
+
+                    # TODO: GPGSV - GPS Satellites in View
+                    # GSV messages report information about satellites that the receiver can “see”, 
+                    # including PRN number, elevation, azimuth, and SNR. This sentence is sent once per second, 
+                    # and contains information about all satellites in view. The GSV sentence is usually sent 
+                    # in a series of three sentences.
+                    # Example NMEA sentence:
+                    # $GPGSV,3,1,12,05,27,049,51,16,53,285,47,18,70,140,52,20,05,023,37*72
+                    # $GPGSV,3,2,12,23,16,144,41,26,63,226,46,27,21,270,38,29,32,090,49*7A
+                    # $GPGSV,3,3,12,31,15,217,37,07,01,345,,09,00,317,,49,,,43*4E
             
                     else:
-                        logging.debug(f"Unrecognized NMEA sentence: {nmea_sentence}")
-
-
+                        logging.warning(f"Unrecognized NMEA sentence: {nmea_sentence}")
 
                
                 except Exception as e:
