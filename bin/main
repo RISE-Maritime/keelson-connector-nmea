@@ -281,7 +281,7 @@ if __name__ == "__main__":
                         # HDOP
                         payload_hdop = TimestampedFloat()
                         payload_hdop.timestamp.FromDatetime(nmea_msg_timestamp_dt)
-                        payload_hdop.value = float(nmea_data.horizontal_dil)
+                        payload_hdop.value = float(nmea_data.hdop)
                         serialized_payload = payload_hdop.SerializeToString()
                         envelope = keelson.enclose(serialized_payload)
                         pub_hadop.put(envelope)
