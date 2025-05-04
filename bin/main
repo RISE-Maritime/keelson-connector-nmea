@@ -111,7 +111,7 @@ if __name__ == "__main__":
     
                 ingress_timestamp = time.time_ns()
 
-                if "raw" in args.publish or "all" in args.publish:
+                if any(topic in args.publish for topic in ("raw", "all")):
                     logging.debug("Publish RAW message...")
                     payload = TimestampedBytes()
                     payload.timestamp.FromNanoseconds(ingress_timestamp)
