@@ -54,7 +54,6 @@ def terminal_inputs():
     parser.add_argument(
         "--publish",
         choices=["all", "raw", "GNGNS", "GPGGA"],
-        default=["all"],
         type=str,
         required=False,
         action="append",
