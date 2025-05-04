@@ -13,7 +13,11 @@ Keelson connector for NMEA devices, by using SOCAT as input.
 socat UDP4-RECV:8500,reuseaddr STDOUT | python3 bin/main --log-level 10 -r rise -e ssrs18 -s rutx --publish raw 
 
 # USB
-socat - /dev/ttyUSB1,raw,echo=0,b115200 STDOUT
+
+chmod +x bin/main
+
+sudo socat /dev/ttyUSB1,raw,echo=0,b115200 - | ./bin/main --log-level 10 -r rise -e ssrs18 -s sealog --publish raw
+
 ```
 
 ## SOCAT install

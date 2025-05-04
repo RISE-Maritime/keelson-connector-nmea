@@ -108,8 +108,7 @@ if __name__ == "__main__":
 
         try:
             for line in sys.stdin.buffer:
-                logging.debug(f"Py line: {line}")
-
+    
                 ingress_timestamp = time.time_ns()
 
                 if "raw" in args.publish:
