@@ -90,7 +90,7 @@ if __name__ == "__main__":
         logging.info(f"Created publisher: {key_exp_pub_satelites_used}")
 
 
-        # Location Fix HADOP
+        # Location Fix HDOP
         key_exp_pub_hadop = keelson.construct_pubsub_key(
             base_path=args.realm,
             entity_id=args.entity_id,
@@ -103,6 +103,34 @@ if __name__ == "__main__":
             congestion_control=zenoh.CongestionControl.DROP,
         )
         logging.info(f"Created publisher: {key_exp_pub_hadop}")
+
+        # Location Fix VDOP
+        key_exp_pub_vdop = keelson.construct_pubsub_key(
+            base_path=args.realm,
+            entity_id=args.entity_id,
+            subject="location_fix_vdop",  
+            source_id=args.source_id,
+        )
+        pub_vdop = session.declare_publisher(
+            key_exp_pub_vdop,
+            priority=zenoh.Priority.INTERACTIVE_HIGH,
+            congestion_control=zenoh.CongestionControl.DROP,
+        )
+        logging.info(f"Created publisher: {key_exp_pub_vdop}")
+
+        # Location Fix PDOP
+        key_exp_pub_pdop = keelson.construct_pubsub_key(
+            base_path=args.realm,
+            entity_id=args.entity_id,
+            subject="location_fix_pdop",  
+            source_id=args.source_id,
+        )
+        pub_pdop = session.declare_publisher(
+            key_exp_pub_pdop,
+            priority=zenoh.Priority.INTERACTIVE_HIGH,
+            congestion_control=zenoh.CongestionControl.DROP,
+        )
+        logging.info(f"Created publisher: {key_exp_pub_pdop}")
 
 
 
@@ -293,10 +321,38 @@ if __name__ == "__main__":
 
                         logging.debug(f"Mode: {nmea_data.fields}")
 
-                        # Extracting satellite IDs
-                        satellite_ids = nmea_data.sv_prn_numbers
-                        logging.debug(f"Satellite IDs: {satellite_ids}")
+                        nmea_msg_timestamp_dt = datetime.combine(
+                            datetime.today(), nmea_data.timestamp, tzinfo=pytz.utc
+                        )
 
+                        # HDOP
+                        payload_hdop = TimestampedFloat()
+                        payload_hdop.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_hdop.value = float(nmea_data.hdop)
+                        serialized_payload = payload_hdop.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        pub_hadop.put(envelope)
+                        logging.debug(f"...published on {key_exp_pub_hadop}")
+
+                        # VDOP
+                        payload_vdop = TimestampedFloat()
+                        payload_vdop.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_vdop.value = float(nmea_data.vdop)
+                        serialized_payload = payload_vdop.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        pub_vdop.put(envelope)
+                        logging.debug(f"...published on {key_exp_pub_vdop}")
+
+                        # PDOP
+                        payload_pdop = TimestampedFloat()
+                        payload_pdop.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_pdop.value = float(nmea_data.pdop)
+                        serialized_payload = payload_pdop.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        pub_pdop.put(envelope)
+                        logging.debug(f"...published on {key_exp_pub_pdop}")
+
+               
 
 
 
