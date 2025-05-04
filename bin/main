@@ -240,7 +240,7 @@ if __name__ == "__main__":
                         logging.debug(f"Processing NMEA GPGGA: {nmea_sentence}")
                         nmea_data = pynmea2.parse(nmea_sentence)
 
-                        logging.debug(f"Parsed NMEA GPGGA: {nmea_data}")    
+                        logging.debug(f"Parsed NMEA GPGGA: {nmea_data.fields}")    
 
                         # Create a LocationFix payload
                         payload_location = LocationFix()
