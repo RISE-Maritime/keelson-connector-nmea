@@ -1,0 +1,266 @@
+#!/usr/bin/env python3
+
+import zenoh
+import logging
+import warnings
+import atexit
+import json
+import time
+import keelson
+from terminal_inputs import terminal_inputs
+from datetime import datetime
+from keelson.payloads.Primitives_pb2 import TimestampedBytes, TimestampedInt, TimestampedFloat
+from keelson.payloads.foxglove.LocationFix_pb2 import LocationFix
+import pynmea2
+import sys
+import pytz
+
+session = None
+args = None
+
+
+if __name__ == "__main__":
+    # Input arguments and configurations
+    args = terminal_inputs()
+    # Setup logger
+    logging.basicConfig(
+        format="%(asctime)s %(levelname)s %(name)s %(message)s", level=args.log_level
+    )
+    logging.captureWarnings(True)
+    warnings.filterwarnings("once")
+
+    ## Construct session
+    logging.info("Opening Zenoh session...")
+    zenoh.init_log_from_env_or("error")
+
+    conf = zenoh.Config()
+    if args.connect is not None:
+        conf.insert_json5(zenoh.config.CONNECT_KEY, json.dumps(args.connect))
+    with zenoh.open(conf) as session:
+        logging.info("Zenoh session opened.")
+
+        def _on_exit():
+            session.close()
+
+        atexit.register(_on_exit)
+
+        #################################################
+        # Setting up PUBLISHER
+
+        # RAW NMEA publisher
+        key_exp_pub_raw = keelson.construct_pubsub_key(
+            base_path=args.realm,
+            entity_id=args.entity_id,
+            subject="raw",  
+            source_id=args.source_id + "/nmea",
+        )
+        pub_raw = session.declare_publisher(
+            key_exp_pub_raw, congestion_control=zenoh.CongestionControl.DROP
+        )
+        logging.info(f"Created publisher: {key_exp_pub_raw}")
+
+        # # GeoJSON publisher
+        # key_exp_pub_geojson = keelson.construct_pubsub_key(
+        #     base_path=args.realm,
+        #     entity_id=args.entity_id,
+        #     subject="geojson",  
+        #     source_id=args.source_id,
+        # )
+        # pub_geojson = session.declare_publisher(
+        #     key_exp_pub_geojson,
+        #     priority=zenoh.Priority.INTERACTIVE_HIGH,
+        #     congestion_control=zenoh.CongestionControl.DROP,
+        # )
+        # logging.info(f"Created publisher: {key_exp_pub_geojson}")
+
+        # Location Fix
+        key_exp_pub_location_fix = keelson.construct_pubsub_key(
+            base_path=args.realm,
+            entity_id=args.entity_id,
+            subject="location_fix",  
+            source_id=args.source_id,
+        )
+        pub_location_fix = session.declare_publisher(
+            key_exp_pub_location_fix,
+            priority=zenoh.Priority.INTERACTIVE_HIGH,
+            congestion_control=zenoh.CongestionControl.DROP,
+        )
+        logging.info(f"Created publisher: {key_exp_pub_location_fix}")
+
+
+        # Satelites used
+        key_exp_pub_satelites_used = keelson.construct_pubsub_key(
+            base_path=args.realm,
+            entity_id=args.entity_id,
+            subject="location_fix_satellites_used", 
+            source_id=args.source_id,
+        )
+        pub_satelites_used= session.declare_publisher(
+            key_exp_pub_satelites_used,
+            priority=zenoh.Priority.INTERACTIVE_HIGH,
+            congestion_control=zenoh.CongestionControl.DROP,
+        )
+        logging.info(f"Created publisher: {key_exp_pub_satelites_used}")
+
+
+        # Location Fix HADOP
+        key_exp_pub_hadop = keelson.construct_pubsub_key(
+            base_path=args.realm,
+            entity_id=args.entity_id,
+            subject="location_fix_hdop",  
+            source_id=args.source_id,
+        )
+        pub_hadop = session.declare_publisher(
+            key_exp_pub_hadop,
+            priority=zenoh.Priority.INTERACTIVE_HIGH,
+            congestion_control=zenoh.CongestionControl.DROP,
+        )
+        logging.info(f"Created publisher: {key_exp_pub_hadop}")
+
+
+
+        try:
+            for line in sys.stdin.buffer:
+                print(f"Py line: {line}")
+
+                ingress_timestamp = time.time_ns()
+
+                logging.debug("Parsing NMEA message...")
+
+                # Parsing NMEA data
+                try:
+                    nmea_sentence = line.decode("utf-8")
+
+                    logging.debug(f"Received NMEA utf-8: {nmea_sentence}")
+
+                    if nmea_sentence.split(",")[0] == "$GNGNS":
+                        logging.debug( f"Received NMEA sentence GNGNS: {nmea_sentence}" )
+                        nmea_data = pynmea2.parse(nmea_sentence)
+
+                        # Create a LocationFix payload
+                        payload_location = LocationFix()
+                        
+                        # Timestamp
+                        nmea_msg_timestamp = nmea_data.timestamp
+                        nmea_msg_timestamp_dt = datetime.combine(datetime.today(), nmea_msg_timestamp, tzinfo=pytz.utc)
+                        logging.debug(f"Timestamp REC: {nmea_msg_timestamp_dt}")
+                        payload_location.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+
+                        # Latitude
+                        if nmea_data.lat_dir == "S":
+                            payload_location.latitude = float(-nmea_data.latitude)
+                        else:
+                            payload_location.latitude = float(nmea_data.latitude)
+                        # Longitude
+                        if nmea_data.lon_dir == "W":
+                            payload_location.longitude = float(-nmea_data.longitude)
+                        else:
+                            payload_location.longitude = float(nmea_data.longitude)
+
+                        # Altitude
+                        payload_location.altitude = float(nmea_data.altitude)
+
+                        serialized_payload = payload_location.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        pub_location_fix.put(envelope)
+                        logging.debug(f"...published on {key_exp_pub_location_fix}")
+
+                        # Satellites used
+                        payload_sat_used = TimestampedInt()
+                        payload_sat_used.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_sat_used.value = int(nmea_data.num_sats)
+                        serialized_payload = payload_sat_used.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        pub_satelites_used.put(envelope)
+                        logging.debug(f"...published on {key_exp_pub_satelites_used}")
+
+                        # HDOP
+                        payload_hdop = TimestampedFloat()
+                        payload_hdop.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_hdop.value = float(nmea_data.hdop)
+                        serialized_payload = payload_hdop.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        pub_hadop.put(envelope)
+                        logging.debug(f"...published on {key_exp_pub_hadop}")
+
+               
+                except Exception as e:
+                    logging.error(f"Error parsing NMEA data: {e}")
+
+                if "raw" in args.publish:
+                    logging.debug("Publish RAW message...")
+                    payload = TimestampedBytes()
+                    payload.timestamp.FromNanoseconds(ingress_timestamp)
+                    payload.value = line
+                    serialized_payload = payload.SerializeToString()
+                    envelope = keelson.enclose(serialized_payload)
+                    pub_raw.put(envelope)
+                    logging.debug(f"...published on {key_exp_pub_raw}")
+
+
+                # if "geojson" in args.publish:
+                #     logging.debug("Parsing NMEA message...")
+                #     # Parsing NMEA data
+                #     try:
+                #         nmea_sentence = data.decode("utf-8")
+
+                #         if nmea_sentence.split(",")[0] == "$GNGNS":
+                #             logging.debug(
+                #                 f"Received NMEA sentence GNGNS: {nmea_sentence}"
+                #             )
+                #             nmea_data = pynmea2.parse(nmea_sentence)
+
+                #             latitude = 0
+                #             longitude = 0
+
+                #             payload = GeoJSON()
+
+                #             # Assuming nmea_data.timestamp is a datetime.time object
+                #             time_obj = nmea_data.timestamp
+                #             # Convert to datetime.datetime object
+                #             datetime_obj = datetime.combine(datetime.today(), time_obj)
+
+                #             # Latitude
+                #             if nmea_data.lat_dir == "S":
+                #                 latitude = float(-nmea_data.latitude)
+                #             else:
+                #                 latitude = float(nmea_data.latitude)
+                #             # Longitude
+                #             if nmea_data.lon_dir == "W":
+                #                 longitude = float(-nmea_data.longitude)
+                #             else:
+                #                 longitude = float(nmea_data.longitude)
+
+                #             geo_json_pos = json.dumps(
+                #                 {
+                #                     "type": "Feature",
+                #                     "geometry": {
+                #                         "type": "Point",
+                #                         "coordinates": [longitude, latitude],
+                #                     },
+                #                     "properties": {
+                #                         "mode_indicator": str(nmea_data.mode_indicator),
+                #                         "satellites_used": int(nmea_data.num_sats),
+                #                         "hdop": float(nmea_data.hdop),
+                #                         "altitude": float(nmea_data.altitude),
+                #                         "geoid_height": float(nmea_data.geo_sep),
+                #                         "gnss_time": datetime_obj.isoformat(),
+                #                     },
+                #                 }
+                #             )
+                #             payload.geojson = geo_json_pos
+                #             serialized_payload = payload.SerializeToString()
+                #             envelope = keelson.enclose(serialized_payload)
+                #             pub_geojson.put(envelope)
+                #             logging.debug(f"...published on {key_exp_pub_geojson}")
+
+                    # except Exception as e:
+                    #     logging.error(f"Error parsing NMEA data: {e}")
+
+ 
+        except KeyboardInterrupt:
+            logging.info("Closing down on user request!")
+            logging.debug("Done! Good bye :)")
+        except Exception as e:
+            logging.error(f"Error: {e}")
+            

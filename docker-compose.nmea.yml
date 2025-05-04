@@ -1,0 +1,20 @@
+services:
+
+# UDP SOCAT 
+  nmea-udp:
+    build: .
+    # image: ghcr.io/rise-maritime/keelson-connector-rutx:latest
+    container_name: keelson-connector-rutx
+    restart: unless-stopped
+    network_mode: "host"
+    command: ["socat UDP4-RECV:8500,reuseaddr STDOUT | main --log-level 10 -r rise -e ssrs18 -s rutx --publish raw"]
+    
+
+# USB SOCAT 
+  nmea-usb:
+    build: .
+    # image: ghcr.io/rise-maritime/keelson-connector-nmea:latest
+    container_name: keelson-connector-rutx-usb
+    restart: unless-stopped
+    network_mode: "host"
+    command: ["socat -d -d -v /dev/ttyUSB0,b115200,raw STDOUT | main --log-level 10 -r rise -e ssrs18 -s rutx --publish raw"]
