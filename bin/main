@@ -319,8 +319,6 @@ if __name__ == "__main__":
                         logging.debug(f"Processing NMEA GPGSA: {nmea_sentence}")
                         nmea_data = pynmea2.parse(nmea_sentence)
 
-                        logging.debug(f"Mode: {nmea_data.fields}")
-
                         nmea_msg_timestamp_dt = datetime.combine(
                             datetime.today(), nmea_data.timestamp, tzinfo=pytz.utc
                         )
