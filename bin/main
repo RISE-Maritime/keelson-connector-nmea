@@ -234,61 +234,59 @@ if __name__ == "__main__":
                     # Diff. ref. station ID | (empty)      | No station ID
                     # Checksum             | *59           | Used to verify data integrity
 
-                    if nmea_sentence.startswith("$GPGGA") and ("GPGGA" in args.publish or "all" in args.publish):
-                        try:
-                            # Parsing GPGGA sentence
-                            logging.debug(f"Processing NMEA GPGGA: {nmea_sentence}")
-                            nmea_data = pynmea2.parse(nmea_sentence)
+                    elif nmea_sentence.startswith("$GPGGA") and ("GPGGA" in args.publish or "all" in args.publish):
+                        # Parsing GPGGA sentence
+                        logging.debug(f"Processing NMEA GPGGA: {nmea_sentence}")
+                        nmea_data = pynmea2.parse(nmea_sentence)
 
-                            # Create a LocationFix payload
-                            payload_location = LocationFix()
+                        # Create a LocationFix payload
+                        payload_location = LocationFix()
 
-                            # Timestamp
-                            nmea_msg_timestamp_dt = datetime.combine(
-                                datetime.today(), nmea_data.timestamp, tzinfo=pytz.utc
-                            )
-                            logging.debug(f"Extracted Timestamp: {nmea_msg_timestamp_dt}")
-                            payload_location.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        # Timestamp
+                        nmea_msg_timestamp_dt = datetime.combine(
+                            datetime.today(), nmea_data.timestamp, tzinfo=pytz.utc
+                        )
+                        logging.debug(f"Extracted Timestamp: {nmea_msg_timestamp_dt}")
+                        payload_location.timestamp.FromDatetime(nmea_msg_timestamp_dt)
 
-                            # Latitude
-                            payload_location.latitude = (
-                                -float(nmea_data.latitude) if nmea_data.lat_dir == "S" else float(nmea_data.latitude)
-                            )
+                        # Latitude
+                        payload_location.latitude = (
+                            -float(nmea_data.latitude) if nmea_data.lat_dir == "S" else float(nmea_data.latitude)
+                        )
 
-                            # Longitude
-                            payload_location.longitude = (
-                                -float(nmea_data.longitude) if nmea_data.lon_dir == "W" else float(nmea_data.longitude)
-                            )
+                        # Longitude
+                        payload_location.longitude = (
+                            -float(nmea_data.longitude) if nmea_data.lon_dir == "W" else float(nmea_data.longitude)
+                        )
 
-                            # Altitude
-                            payload_location.altitude = float(nmea_data.altitude)
+                        # Altitude
+                        payload_location.altitude = float(nmea_data.altitude)
 
-                            # Serialize and publish LocationFix
-                            serialized_payload = payload_location.SerializeToString()
-                            envelope = keelson.enclose(serialized_payload)
-                            pub_location_fix.put(envelope)
-                            logging.debug(f"Published LocationFix on {key_exp_pub_location_fix}")
+                        # Serialize and publish LocationFix
+                        serialized_payload = payload_location.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        pub_location_fix.put(envelope)
+                        logging.debug(f"Published LocationFix on {key_exp_pub_location_fix}")
 
-                            # Satellites used
-                            payload_sat_used = TimestampedInt()
-                            payload_sat_used.timestamp.FromDatetime(nmea_msg_timestamp_dt)
-                            payload_sat_used.value = int(nmea_data.num_sats)
-                            serialized_payload = payload_sat_used.SerializeToString()
-                            envelope = keelson.enclose(serialized_payload)
-                            pub_satelites_used.put(envelope)
-                            logging.debug(f"Published Satellites Used on {key_exp_pub_satelites_used}")
+                        # Satellites used
+                        payload_sat_used = TimestampedInt()
+                        payload_sat_used.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_sat_used.value = int(nmea_data.num_sats)
+                        serialized_payload = payload_sat_used.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        pub_satelites_used.put(envelope)
+                        logging.debug(f"Published Satellites Used on {key_exp_pub_satelites_used}")
 
-                            # HDOP
-                            payload_hdop = TimestampedFloat()
-                            payload_hdop.timestamp.FromDatetime(nmea_msg_timestamp_dt)
-                            payload_hdop.value = float(nmea_data.horizontal_dil)
-                            serialized_payload = payload_hdop.SerializeToString()
-                            envelope = keelson.enclose(serialized_payload)
-                            pub_hadop.put(envelope)
-                            logging.debug(f"Published HDOP on {key_exp_pub_hadop}")
+                        # HDOP
+                        payload_hdop = TimestampedFloat()
+                        payload_hdop.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_hdop.value = float(nmea_data.horizontal_dil)
+                        serialized_payload = payload_hdop.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        pub_hadop.put(envelope)
+                        logging.debug(f"Published HDOP on {key_exp_pub_hadop}")
 
-                        except Exception as e:
-                            logging.error(f"Error processing GPGGA sentence: {e}")
+            
                     else:
                         logging.debug(f"Unrecognized NMEA sentence: {nmea_sentence}")
 
@@ -297,7 +295,7 @@ if __name__ == "__main__":
                
                 except Exception as e:
                     logging.error(f"Error parsing NMEA data: {e}")
-                    logging.debug( f"NMEA GNGNS: {nmea_sentence}" )
+                    logging.debug( f"NMEA: {nmea_sentence}" )
                     nmea_data = pynmea2.parse(nmea_sentence)
 
 
