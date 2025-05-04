@@ -319,13 +319,10 @@ if __name__ == "__main__":
                         logging.debug(f"Processing NMEA GPGSA: {nmea_sentence}")
                         nmea_data = pynmea2.parse(nmea_sentence)
 
-                        nmea_msg_timestamp_dt = datetime.combine(
-                            datetime.today(), nmea_data.timestamp, tzinfo=pytz.utc
-                        )
-
+                 
                         # HDOP
                         payload_hdop = TimestampedFloat()
-                        payload_hdop.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_hdop.timestamp.FromNanoseconds(ingress_timestamp)
                         payload_hdop.value = float(nmea_data.hdop)
                         serialized_payload = payload_hdop.SerializeToString()
                         envelope = keelson.enclose(serialized_payload)
@@ -334,7 +331,7 @@ if __name__ == "__main__":
 
                         # VDOP
                         payload_vdop = TimestampedFloat()
-                        payload_vdop.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_vdop.timestamp.FromNanoseconds(ingress_timestamp)
                         payload_vdop.value = float(nmea_data.vdop)
                         serialized_payload = payload_vdop.SerializeToString()
                         envelope = keelson.enclose(serialized_payload)
@@ -343,7 +340,7 @@ if __name__ == "__main__":
 
                         # PDOP
                         payload_pdop = TimestampedFloat()
-                        payload_pdop.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_pdop.timestamp.FromNanoseconds(ingress_timestamp)
                         payload_pdop.value = float(nmea_data.pdop)
                         serialized_payload = payload_pdop.SerializeToString()
                         envelope = keelson.enclose(serialized_payload)
