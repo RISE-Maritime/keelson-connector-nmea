@@ -186,8 +186,6 @@ if __name__ == "__main__":
                 try:
                     nmea_sentence = line.decode("utf-8")
 
-                    logging.debug(f"Received NMEA utf-8: {nmea_sentence}")
-
                     # Global Navigation Satellite System Fix Data
                     # Example NMEA sentence:
                     # $GNGNS,074641.00,5726.151284,N,01201.950160,E,1,09,0.6,20.6,M,39.0,M,,*59

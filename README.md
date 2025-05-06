@@ -14,9 +14,7 @@ socat UDP4-RECV:8500,reuseaddr STDOUT | python3 bin/main --log-level 10 -r rise 
 
 # USB
 
-chmod +x bin/main
-
-sudo socat /dev/ttyUSB1,raw,echo=0,b115200 - | ./bin/main --log-level 10 -r rise -e ssrs18 -s sealog --publish raw
+sudo socat /dev/ttyUSB1,raw,echo=0,b115200 - | ./bin/main --log-level 10 -r rise -e ssrs18 -s sealog --publish all
 
 ```
 
@@ -53,9 +51,9 @@ Setup for development environment on your own computer:
 3) Now the Zenoh router is hopefully running in the background and should be available on localhost:8000. This can be example tested with [Zenoh Rest API ](https://zenoh.io/docs/apis/rest/) or continue to next step running Python API
 4) Set up python virtual environment  `python >= 3.11`
    1) Install package `pip install -r requirements.txt`
-5)  Now you are ready to explore some example scripts in the [exploration folder](./exploration/) 
-    1)  Sample are coming from:
-         -   [Zenoh Python API ](https://zenoh-python.readthedocs.io/en/0.10.1-rc/#quick-start-examples)
+5) Now you are ready to explore some example scripts in the [exploration folder](./exploration/)
+    1) Sample are coming from:
+         - [Zenoh Python API ](https://zenoh-python.readthedocs.io/en/0.10.1-rc/#quick-start-examples)
 
 
 [Zenoh CLI for debugging and problem solving](https://github.com/RISE-Maritime/zenoh-cli)
