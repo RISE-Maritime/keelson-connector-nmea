@@ -17,7 +17,7 @@ import pytz
 
 session = None
 args = None
-
+gpgsv_buffer = []
 
 if __name__ == "__main__":
     # Input arguments and configurations
@@ -625,10 +625,10 @@ if __name__ == "__main__":
                             return combined_data
 
                         # Store incoming GPGSV messages
-                        if not hasattr(session, "gpgsv_buffer"):
-                            session.gpgsv_buffer = []
+                        if not hasattr(gpgsv_buffer, "gpgsv_buffer"):
+                            gpgsv_buffer = []
                         
-                        session.gpgsv_buffer.append(nmea_sentence)
+                        gpgsv_buffer.append(nmea_sentence)
 
                         # Check if all GPGSV messages have been received
                         try:
@@ -638,8 +638,10 @@ if __name__ == "__main__":
 
                             if current_message == total_messages:
                                 # Combine and process all messages
-                                combined_data = combine_gpgsv_messages(session.gpgsv_buffer)
-                                session.gpgsv_buffer = []  # Clear buffer after processing
+                                combined_data = combine_gpgsv_messages(gpgsv_buffer)
+                                gpgsv_buffer = []  # Clear buffer after processing
+
+                                logging.debug(f"Combined GPGSV data: {combined_data}")
 
                                 # Serialize and publish combined GPGSV data
                                 payload_gpgsv = TimestampedString()
