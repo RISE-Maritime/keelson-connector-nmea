@@ -9,7 +9,7 @@ import time
 import keelson
 from terminal_inputs import terminal_inputs
 from datetime import datetime
-from keelson.payloads.Primitives_pb2 import TimestampedBytes, TimestampedInt, TimestampedFloat
+from keelson.payloads.Primitives_pb2 import TimestampedBytes, TimestampedInt, TimestampedFloat, TimestampedString
 from keelson.payloads.foxglove.LocationFix_pb2 import LocationFix
 import pynmea2
 import sys
@@ -580,7 +580,7 @@ if __name__ == "__main__":
                         logging.debug(f"...published on {key_exp_pub_speed}")
 
 
-                    # TODO: GPGSV - GPS Satellites in View
+                    # GPGSV - GPS Satellites in View
                     # GSV messages report information about satellites that the receiver can “see”, 
                     # including PRN number, elevation, azimuth, and SNR. This sentence is sent once per second, 
                     # and contains information about all satellites in view. The GSV sentence is usually sent 
@@ -589,6 +589,82 @@ if __name__ == "__main__":
                     # $GPGSV,3,1,12,05,27,049,51,16,53,285,47,18,70,140,52,20,05,023,37*72
                     # $GPGSV,3,2,12,23,16,144,41,26,63,226,46,27,21,270,38,29,32,090,49*7A
                     # $GPGSV,3,3,12,31,15,217,37,07,01,345,,09,00,317,,49,,,43*4E
+                    # Combine incoming GPGSV messages into a single output
+                    elif (nmea_sentence.startswith("$GPGSV") and ("GPGSV" in args.publish or "all" in args.publish)):
+                        logging.debug(f"Processing NMEA GPGSV: {nmea_sentence}")
+                        
+                        # Function to combine GPGSV messages
+                        def combine_gpgsv_messages(messages):
+                            combined_data = {
+                                "total_messages": 0,
+                                "current_message": 0,
+                                "satellites_in_view": 0,
+                                "satellites": []
+                            }
+                            for msg in messages:
+                                try:
+                                    parsed_msg = pynmea2.parse(msg)
+                                    combined_data["total_messages"] = int(parsed_msg.num_messages)
+                                    combined_data["current_message"] = int(parsed_msg.msg_num)
+                                    combined_data["satellites_in_view"] = int(parsed_msg.num_sv_in_view)
+                                    
+                                    for i in range(4):  # Each GPGSV message can contain up to 4 satellites
+                                        prn = getattr(parsed_msg, f"sv_prn_num_{i+1}", None)
+                                        elevation = getattr(parsed_msg, f"elevation_deg_{i+1}", None)
+                                        azimuth = getattr(parsed_msg, f"azimuth_deg_{i+1}", None)
+                                        snr = getattr(parsed_msg, f"snr_{i+1}", None)
+                                        if prn:
+                                            combined_data["satellites"].append({
+                                                "prn": prn,
+                                                "elevation": elevation,
+                                                "azimuth": azimuth,
+                                                "snr": snr
+                                            })
+                                except Exception as e:
+                                    logging.warning(f"Error parsing GPGSV message: {e}")
+                            return combined_data
+
+                        # Store incoming GPGSV messages
+                        if not hasattr(session, "gpgsv_buffer"):
+                            session.gpgsv_buffer = []
+                        
+                        session.gpgsv_buffer.append(nmea_sentence)
+
+                        # Check if all GPGSV messages have been received
+                        try:
+                            parsed_msg = pynmea2.parse(nmea_sentence)
+                            total_messages = int(parsed_msg.num_messages)
+                            current_message = int(parsed_msg.msg_num)
+
+                            if current_message == total_messages:
+                                # Combine and process all messages
+                                combined_data = combine_gpgsv_messages(session.gpgsv_buffer)
+                                session.gpgsv_buffer = []  # Clear buffer after processing
+
+                                # Serialize and publish combined GPGSV data
+                                payload_gpgsv = TimestampedString()
+                                payload_gpgsv.timestamp.FromNanoseconds(ingress_timestamp)
+                                payload_gpgsv.value = json.dumps(combined_data).encode("utf-8")
+                                serialized_payload = payload_gpgsv.SerializeToString()
+                                envelope = keelson.enclose(serialized_payload)
+                                key_exp_pub_gpgsv = keelson.construct_pubsub_key(
+                                    base_path=args.realm,
+                                    entity_id=args.entity_id,
+                                    subject="raw_json",
+                                    source_id=args.source_id + "/nmea/GPGSV",
+                                )
+                                session.put(
+                                    key_expr=key_exp_pub_gpgsv,
+                                    payload=envelope,
+                                    priority=zenoh.Priority.INTERACTIVE_HIGH,
+                                    congestion_control=zenoh.CongestionControl.DROP,
+                                )
+                                logging.debug(f"Published combined GPGSV data on {key_exp_pub_gpgsv}")
+
+                        except Exception as e:
+                            logging.warning(f"Error processing GPGSV message: {e}")
+
+
             
                     else:
                         logging.warning(f"Unrecognized NMEA sentence: {nmea_sentence}")
