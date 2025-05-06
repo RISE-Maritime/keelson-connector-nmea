@@ -624,10 +624,7 @@ if __name__ == "__main__":
                                     logging.warning(f"Error parsing GPGSV message: {e}")
                             return combined_data
 
-                        # Store incoming GPGSV messages
-                        if not hasattr(gpgsv_buffer, "gpgsv_buffer"):
-                            gpgsv_buffer = []
-                        
+        
                         gpgsv_buffer.append(nmea_sentence)
 
                         # Check if all GPGSV messages have been received
