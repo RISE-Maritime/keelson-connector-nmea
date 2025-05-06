@@ -503,6 +503,8 @@ if __name__ == "__main__":
                         logging.debug(f"Processing NMEA GPRMC: {nmea_sentence}")
                         nmea_data = pynmea2.parse(nmea_sentence)
 
+                        logging.debug(f"Extracted FILDS: {nmea_data.fields}")
+
                         payload_location = LocationFix()
                         
                         # Timestamp
