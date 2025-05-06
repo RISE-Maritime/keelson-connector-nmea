@@ -503,7 +503,7 @@ if __name__ == "__main__":
                         logging.debug(f"Processing NMEA GPRMC: {nmea_sentence}")
                         nmea_data = pynmea2.parse(nmea_sentence)
 
-                        logging.debug(f"Extracted FILDS: {nmea_data.fields}")
+                        # logging.debug(f"Extracted FILDS: {nmea_data.fields}")
 
                         payload_location = LocationFix()
                         
@@ -542,7 +542,7 @@ if __name__ == "__main__":
                         # Course over ground
                         payload_course = TimestampedFloat()
                         payload_course.timestamp.FromNanoseconds(ingress_timestamp)
-                        payload_course.value = float(nmea_data.true_track)
+                        payload_course.value = float(nmea_data.true_course)
                         serialized_payload = payload_course.SerializeToString()
                         envelope = keelson.enclose(serialized_payload)
                         key_exp_pub_course = keelson.construct_pubsub_key(
@@ -562,7 +562,7 @@ if __name__ == "__main__":
                         # Ground speed
                         payload_speed = TimestampedFloat()
                         payload_speed.timestamp.FromNanoseconds(ingress_timestamp)
-                        payload_speed.value = float(nmea_data.spd_over_grnd_kts)
+                        payload_speed.value = float(nmea_data.spd_over_grnd)
                         serialized_payload = payload_speed.SerializeToString()
                         envelope = keelson.enclose(serialized_payload)
                         key_exp_pub_speed = keelson.construct_pubsub_key(
