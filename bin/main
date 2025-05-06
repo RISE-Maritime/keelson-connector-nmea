@@ -62,41 +62,8 @@ if __name__ == "__main__":
 
 
 
-
-
-
-        # Course over ground
-        key_exp_pub_course = keelson.construct_pubsub_key(
-            base_path=args.realm,
-            entity_id=args.entity_id,
-            subject="course_over_ground_deg",  
-            source_id=args.source_id,
-        )
-        pub_course = session.declare_publisher(
-            key_exp_pub_course,
-            priority=zenoh.Priority.INTERACTIVE_HIGH,
-            congestion_control=zenoh.CongestionControl.DROP,
-        )
-        logging.info(f"Created publisher: {key_exp_pub_course}")
-
-        # Speed over ground
-        key_exp_pub_speed = keelson.construct_pubsub_key(
-            base_path=args.realm,
-            entity_id=args.entity_id,
-            subject="speed_over_ground_knots",  
-            source_id=args.source_id,
-        )
-        pub_speed = session.declare_publisher(
-            key_exp_pub_speed,
-            priority=zenoh.Priority.INTERACTIVE_HIGH,
-            congestion_control=zenoh.CongestionControl.DROP,
-        )
-        logging.info(f"Created publisher: {key_exp_pub_speed}")
-
-
-
-
         try:
+            # SOCAT input stream
             for line in sys.stdin.buffer:
     
                 ingress_timestamp = time.time_ns()
@@ -111,8 +78,6 @@ if __name__ == "__main__":
                     envelope = keelson.enclose(serialized_payload)
                     pub_raw.put(envelope)
                     logging.debug(f"...published on {key_exp_pub_raw}")
-
-
 
                 logging.debug("Decoding NMEA message...")
 
@@ -638,8 +603,6 @@ if __name__ == "__main__":
                                 combined_data = combine_gpgsv_messages(gpgsv_buffer)
                                 gpgsv_buffer = []  # Clear buffer after processing
 
-                                logging.debug(f"Combined GPGSV data: {combined_data}")
-
                                 # Serialize and publish combined GPGSV data
                                 payload_gpgsv = TimestampedString()
                                 payload_gpgsv.timestamp.FromNanoseconds(ingress_timestamp)
@@ -663,8 +626,6 @@ if __name__ == "__main__":
                         except Exception as e:
                             logging.warning(f"Error processing GPGSV message: {e}")
 
-
-            
                     else:
                         logging.warning(f"Unrecognized NMEA sentence: {nmea_sentence}")
 
