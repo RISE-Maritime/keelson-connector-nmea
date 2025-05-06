@@ -436,7 +436,7 @@ if __name__ == "__main__":
                         # Course over ground
                         payload_course = TimestampedFloat()
                         payload_course.timestamp.FromNanoseconds(ingress_timestamp)
-                        payload_course.value = float(nmea_data.course)
+                        payload_course.value = float(nmea_data.true_track)
                         serialized_payload = payload_course.SerializeToString()
                         envelope = keelson.enclose(serialized_payload)
                         pub_course.put(envelope)
@@ -445,7 +445,7 @@ if __name__ == "__main__":
                         # Ground speed
                         payload_speed = TimestampedFloat()
                         payload_speed.timestamp.FromNanoseconds(ingress_timestamp)
-                        payload_speed.value = float(nmea_data.spd_over_grnd)
+                        payload_speed.value = float(nmea_data.spd_over_grnd_kts)
                         serialized_payload = payload_speed.SerializeToString()
                         envelope = keelson.enclose(serialized_payload)
                         pub_speed.put(envelope)
