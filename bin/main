@@ -60,77 +60,10 @@ if __name__ == "__main__":
         logging.info(f"Created publisher: {key_exp_pub_raw}")
 
 
-        # Location Fix
-        key_exp_pub_location_fix = keelson.construct_pubsub_key(
-            base_path=args.realm,
-            entity_id=args.entity_id,
-            subject="location_fix",  
-            source_id=args.source_id,
-        )
-        pub_location_fix = session.declare_publisher(
-            key_exp_pub_location_fix,
-            priority=zenoh.Priority.INTERACTIVE_HIGH,
-            congestion_control=zenoh.CongestionControl.DROP,
-        )
-        logging.info(f"Created publisher: {key_exp_pub_location_fix}")
 
 
-        # Satellites used
-        key_exp_pub_satelites_used = keelson.construct_pubsub_key(
-            base_path=args.realm,
-            entity_id=args.entity_id,
-            subject="location_fix_satellites_used", 
-            source_id=args.source_id,
-        )
-        pub_satelites_used= session.declare_publisher(
-            key_exp_pub_satelites_used,
-            priority=zenoh.Priority.INTERACTIVE_HIGH,
-            congestion_control=zenoh.CongestionControl.DROP,
-        )
-        logging.info(f"Created publisher: {key_exp_pub_satelites_used}")
 
 
-        # Location Fix HDOP
-        key_exp_pub_hadop = keelson.construct_pubsub_key(
-            base_path=args.realm,
-            entity_id=args.entity_id,
-            subject="location_fix_hdop",  
-            source_id=args.source_id,
-        )
-        pub_hadop = session.declare_publisher(
-            key_exp_pub_hadop,
-            priority=zenoh.Priority.INTERACTIVE_HIGH,
-            congestion_control=zenoh.CongestionControl.DROP,
-        )
-        logging.info(f"Created publisher: {key_exp_pub_hadop}")
-
-        # Location Fix VDOP
-        key_exp_pub_vdop = keelson.construct_pubsub_key(
-            base_path=args.realm,
-            entity_id=args.entity_id,
-            subject="location_fix_vdop",  
-            source_id=args.source_id,
-        )
-        pub_vdop = session.declare_publisher(
-            key_exp_pub_vdop,
-            priority=zenoh.Priority.INTERACTIVE_HIGH,
-            congestion_control=zenoh.CongestionControl.DROP,
-        )
-        logging.info(f"Created publisher: {key_exp_pub_vdop}")
-
-        # Location Fix PDOP
-        key_exp_pub_pdop = keelson.construct_pubsub_key(
-            base_path=args.realm,
-            entity_id=args.entity_id,
-            subject="location_fix_pdop",  
-            source_id=args.source_id,
-        )
-        pub_pdop = session.declare_publisher(
-            key_exp_pub_pdop,
-            priority=zenoh.Priority.INTERACTIVE_HIGH,
-            congestion_control=zenoh.CongestionControl.DROP,
-        )
-        logging.info(f"Created publisher: {key_exp_pub_pdop}")
 
         # Course over ground
         key_exp_pub_course = keelson.construct_pubsub_key(
@@ -168,6 +101,7 @@ if __name__ == "__main__":
     
                 ingress_timestamp = time.time_ns()
 
+                # Publish RAW message
                 if any(topic in args.publish for topic in ("raw", "all")):
                     logging.debug("Publish RAW message...")
                     payload = TimestampedBytes()
@@ -180,9 +114,8 @@ if __name__ == "__main__":
 
 
 
-                logging.debug("Parsing NMEA message...")
+                logging.debug("Decoding NMEA message...")
 
-                # Parsing NMEA data
                 try:
                     nmea_sentence = line.decode("utf-8")
 
@@ -238,8 +171,19 @@ if __name__ == "__main__":
 
                         serialized_payload = payload_location.SerializeToString()
                         envelope = keelson.enclose(serialized_payload)
-                        pub_location_fix.put(envelope)
-                        logging.debug(f"...published on {key_exp_pub_location_fix}")
+                        key_exp_pub_location_fix_gngns = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="location_fix", 
+                            source_id=args.source_id + "/nmea/GNGNS",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_location_fix_gngns,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"...published on {key_exp_pub_location_fix_gngns}")
 
                         # Satellites used
                         payload_sat_used = TimestampedInt()
@@ -247,7 +191,18 @@ if __name__ == "__main__":
                         payload_sat_used.value = int(nmea_data.num_sats)
                         serialized_payload = payload_sat_used.SerializeToString()
                         envelope = keelson.enclose(serialized_payload)
-                        pub_satelites_used.put(envelope)
+                        key_exp_pub_satelites_used = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="location_fix_satellites_used", 
+                            source_id=args.source_id + "/nmea/GNGNS",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_satelites_used,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
                         logging.debug(f"...published on {key_exp_pub_satelites_used}")
 
                         # HDOP
@@ -256,37 +211,21 @@ if __name__ == "__main__":
                         payload_hdop.value = float(nmea_data.hdop)
                         serialized_payload = payload_hdop.SerializeToString()
                         envelope = keelson.enclose(serialized_payload)
-                        pub_hadop.put(envelope)
+                        key_exp_pub_hadop = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="location_fix_hdop",
+                            source_id=args.source_id + "/nmea/GNGNS",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_hadop,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
                         logging.debug(f"...published on {key_exp_pub_hadop}")
-                    
-                        # Create a LocationFix payload
-                        payload_location = LocationFix()
-                        
-                        # Timestamp
-                        nmea_msg_timestamp = nmea_data.timestamp
-                        nmea_msg_timestamp_dt = datetime.combine(datetime.today(), nmea_msg_timestamp, tzinfo=pytz.utc)
-                        logging.debug(f"Timestamp REC: {nmea_msg_timestamp_dt}")
-                        payload_location.timestamp.FromDatetime(nmea_msg_timestamp_dt)
 
-                        # Latitude
-                        if nmea_data.lat_dir == "S":
-                            payload_location.latitude = float(-nmea_data.latitude)
-                        else:
-                            payload_location.latitude = float(nmea_data.latitude)
-                        # Longitude
-                        if nmea_data.lon_dir == "W":
-                            payload_location.longitude = float(-nmea_data.longitude)
-                        else:
-                            payload_location.longitude = float(nmea_data.longitude)
-
-                        # Altitude
-                        payload_location.altitude = float(nmea_data.altitude)
-
-                        serialized_payload = payload_location.SerializeToString()
-                        envelope = keelson.enclose(serialized_payload)
-                        pub_location_fix.put(envelope)
-                        logging.debug(f"...published on {key_exp_pub_location_fix}")
-
+                  
 
                     # Global Positioning System Fix Data
                     # Example NMEA sentence: 
@@ -343,8 +282,19 @@ if __name__ == "__main__":
                         # Serialize and publish LocationFix
                         serialized_payload = payload_location.SerializeToString()
                         envelope = keelson.enclose(serialized_payload)
-                        pub_location_fix.put(envelope)
-                        logging.debug(f"Published LocationFix on {key_exp_pub_location_fix}")
+                        key_exp_pub_location_fix_gpgga = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="location_fix",
+                            source_id=args.source_id + "/nmea/GPGGA",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_location_fix_gpgga,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"Published LocationFix on {key_exp_pub_location_fix_gpgga}")
 
                         # Satellites used
                         payload_sat_used = TimestampedInt()
@@ -352,7 +302,18 @@ if __name__ == "__main__":
                         payload_sat_used.value = int(nmea_data.num_sats)
                         serialized_payload = payload_sat_used.SerializeToString()
                         envelope = keelson.enclose(serialized_payload)
-                        pub_satelites_used.put(envelope)
+                        key_exp_pub_satelites_used = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="location_fix_satellites_used",
+                            source_id=args.source_id + "/nmea/GPGGA",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_satelites_used,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
                         logging.debug(f"Published Satellites Used on {key_exp_pub_satelites_used}")
 
                         # HDOP
@@ -361,7 +322,18 @@ if __name__ == "__main__":
                         payload_hdop.value = float(nmea_data.horizontal_dil)
                         serialized_payload = payload_hdop.SerializeToString()
                         envelope = keelson.enclose(serialized_payload)
-                        pub_hadop.put(envelope)
+                        key_exp_pub_hadop = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="location_fix_hdop",
+                            source_id=args.source_id + "/nmea/GPGGA",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_hadop,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
                         logging.debug(f"Published HDOP on {key_exp_pub_hadop}")
 
                     # Global Navigation Satellite System Fix Data
@@ -389,8 +361,19 @@ if __name__ == "__main__":
                         payload_hdop.value = float(nmea_data.hdop)
                         serialized_payload = payload_hdop.SerializeToString()
                         envelope = keelson.enclose(serialized_payload)
-                        pub_hadop.put(envelope)
-                        logging.debug(f"...published on {key_exp_pub_hadop}")
+                        key_exp_pub_hdop = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="location_fix_hdop",
+                            source_id=args.source_id + "/nmea/GPGSA",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_hdop,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"...published on {key_exp_pub_hdop}")
 
                         # VDOP
                         payload_vdop = TimestampedFloat()
@@ -398,7 +381,18 @@ if __name__ == "__main__":
                         payload_vdop.value = float(nmea_data.vdop)
                         serialized_payload = payload_vdop.SerializeToString()
                         envelope = keelson.enclose(serialized_payload)
-                        pub_vdop.put(envelope)
+                        key_exp_pub_vdop = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="location_fix_vdop",
+                            source_id=args.source_id + "/nmea/GPGSA",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_vdop,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
                         logging.debug(f"...published on {key_exp_pub_vdop}")
 
                         # PDOP
@@ -407,7 +401,18 @@ if __name__ == "__main__":
                         payload_pdop.value = float(nmea_data.pdop)
                         serialized_payload = payload_pdop.SerializeToString()
                         envelope = keelson.enclose(serialized_payload)
-                        pub_pdop.put(envelope)
+                        key_exp_pub_pdop = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="location_fix_pdop",
+                            source_id=args.source_id + "/nmea/GPGSA",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_pdop,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
                         logging.debug(f"...published on {key_exp_pub_pdop}")
 
                
@@ -432,14 +437,25 @@ if __name__ == "__main__":
                     elif (nmea_sentence.startswith("$GPVTG") and ("GPVTG" in args.publish or "all" in args.publish)):
                         logging.debug(f"Processing NMEA GPVTG: {nmea_sentence}")
                         nmea_data = pynmea2.parse(nmea_sentence)
-                        logging.debug(f"Parsed NMEA GPVTG: {nmea_data.fields}")
+                     
                         # Course over ground
                         payload_course = TimestampedFloat()
                         payload_course.timestamp.FromNanoseconds(ingress_timestamp)
                         payload_course.value = float(nmea_data.true_track)
                         serialized_payload = payload_course.SerializeToString()
                         envelope = keelson.enclose(serialized_payload)
-                        pub_course.put(envelope)
+                        key_exp_pub_course = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="course_over_ground_deg",  
+                            source_id=args.source_id + "/nmea/GPVTG",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_course,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
                         logging.debug(f"...published on {key_exp_pub_course}")
                         
                         # Ground speed
@@ -448,7 +464,120 @@ if __name__ == "__main__":
                         payload_speed.value = float(nmea_data.spd_over_grnd_kts)
                         serialized_payload = payload_speed.SerializeToString()
                         envelope = keelson.enclose(serialized_payload)
-                        pub_speed.put(envelope)
+                        key_exp_pub_speed = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="speed_over_ground_knots",
+                            source_id=args.source_id + "/nmea/GPVTG",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_speed,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"...published on {key_exp_pub_speed}")
+
+                    # Recommended Minimum Specific GNSS Data
+                    # Example NMEA sentence:
+                    # $GPRMC,090134.00,A,5726.151930,N,01201.950809,E,0.0,256.8,060525,0.5,E,A*34
+                    # -------------------------------------------------
+                    # Field                | Value         | Meaning
+                    # -------------------------------------------------
+                    # 1                    | $GPRMC        | Recommended Minimum Specific GNSS Data
+                    # 2                    | 090134.00     | UTC time: 09:01:34.00
+                    # 3                    | A             | Status: A = Active (valid fix)
+                    # 4                    | 5726.151930   | Latitude: 57 degrees 26.151930 minutes North
+                    # 5                    | N             | North/South Indicator: North
+                    # 6                    | 01201.950809  | Longitude: 12 degrees 1.950809 minutes East
+                    # 7                    | E             | East/West Indicator: East
+                    # 8                    | 0.0           | Speed over ground: 0.0 knots
+                    # 9                    | 256.8         | Track angle: 256.8 degrees (degrees True)
+                    # 10                   | 060525        | Date: 06 May 2025
+                    # 11                   | 0.5           | Magnetic variation: 0.5 degrees
+                    # 12                   | E             | Magnetic variation direction: East
+                    # 13                   | A             | Mode: A = Autonomous GPS fix
+                    # Checksum             | *34           | Verifies data integrity
+
+                    elif (nmea_sentence.startswith("$GPRMC") and ("GPRMC" in args.publish or "all" in args.publish)):
+                        logging.debug(f"Processing NMEA GPRMC: {nmea_sentence}")
+                        nmea_data = pynmea2.parse(nmea_sentence)
+
+                        payload_location = LocationFix()
+                        
+                        # Timestamp
+                        nmea_msg_timestamp = nmea_data.timestamp
+                        nmea_msg_timestamp_dt = datetime.combine(datetime.today(), nmea_msg_timestamp, tzinfo=pytz.utc)
+                        payload_location.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+
+                        # Latitude
+                        if nmea_data.lat_dir == "S":
+                            payload_location.latitude = float(-nmea_data.latitude)
+                        else:
+                            payload_location.latitude = float(nmea_data.latitude)
+                        # Longitude
+                        if nmea_data.lon_dir == "W":
+                            payload_location.longitude = float(-nmea_data.longitude)
+                        else:
+                            payload_location.longitude = float(nmea_data.longitude)
+
+                        # Altitude
+                        payload_location.altitude = float(nmea_data.altitude)
+
+                        serialized_payload = payload_location.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        key_exp_pub_location_fix_gprmc = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="location_fix", 
+                            source_id=args.source_id + "/nmea/GPRMC",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_location_fix_gprmc,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"...published on {key_exp_pub_location_fix_gprmc}")
+
+                        # Course over ground
+                        payload_course = TimestampedFloat()
+                        payload_course.timestamp.FromNanoseconds(ingress_timestamp)
+                        payload_course.value = float(nmea_data.true_track)
+                        serialized_payload = payload_course.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        key_exp_pub_course = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="course_over_ground_deg",  
+                            source_id=args.source_id + "/nmea/GPRMC",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_course,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"...published on {key_exp_pub_course}")
+
+                        # Ground speed
+                        payload_speed = TimestampedFloat()
+                        payload_speed.timestamp.FromNanoseconds(ingress_timestamp)
+                        payload_speed.value = float(nmea_data.spd_over_grnd_kts)
+                        serialized_payload = payload_speed.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        key_exp_pub_speed = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="speed_over_ground_knots",
+                            source_id=args.source_id + "/nmea/GPRMC",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_speed,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
                         logging.debug(f"...published on {key_exp_pub_speed}")
 
 
