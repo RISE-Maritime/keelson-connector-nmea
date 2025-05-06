@@ -432,6 +432,7 @@ if __name__ == "__main__":
                     elif (nmea_sentence.startswith("$GPVTG") and ("GPVTG" in args.publish or "all" in args.publish)):
                         logging.debug(f"Processing NMEA GPVTG: {nmea_sentence}")
                         nmea_data = pynmea2.parse(nmea_sentence)
+                        logging.debug(f"Parsed NMEA GPVTG: {nmea_data.fields}")
                         # Course over ground
                         payload_course = TimestampedFloat()
                         payload_course.timestamp.FromNanoseconds(ingress_timestamp)
