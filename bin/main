@@ -521,9 +521,6 @@ if __name__ == "__main__":
                         else:
                             payload_location.longitude = float(nmea_data.longitude)
 
-                        # Altitude
-                        payload_location.altitude = float(nmea_data.altitude)
-
                         serialized_payload = payload_location.SerializeToString()
                         envelope = keelson.enclose(serialized_payload)
                         key_exp_pub_location_fix_gprmc = keelson.construct_pubsub_key(
