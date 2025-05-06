@@ -465,12 +465,14 @@ if __name__ == "__main__":
                     else:
                         logging.warning(f"Unrecognized NMEA sentence: {nmea_sentence}")
 
-               
+                except pynmea2.ChecksumError as e:
+                    logging.warning(f"Skipping NMEA line due to invalid checksum: {e}")
+                    logging.debug(f"NMEA: {nmea_sentence}")
+                    continue
                 except Exception as e:
                     logging.error(f"Error parsing NMEA data: {e}")
-                    logging.debug( f"NMEA: {nmea_sentence}" )
-                    nmea_data = pynmea2.parse(nmea_sentence)
-
+                    logging.error( f"NMEA RAW: {nmea_sentence}" )
+                    continue
 
  
         except KeyboardInterrupt:
