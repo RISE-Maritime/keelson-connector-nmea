@@ -132,6 +132,35 @@ if __name__ == "__main__":
         )
         logging.info(f"Created publisher: {key_exp_pub_pdop}")
 
+        # Course over ground
+        key_exp_pub_course = keelson.construct_pubsub_key(
+            base_path=args.realm,
+            entity_id=args.entity_id,
+            subject="course_over_ground_deg",  
+            source_id=args.source_id,
+        )
+        pub_course = session.declare_publisher(
+            key_exp_pub_course,
+            priority=zenoh.Priority.INTERACTIVE_HIGH,
+            congestion_control=zenoh.CongestionControl.DROP,
+        )
+        logging.info(f"Created publisher: {key_exp_pub_course}")
+
+        # Speed over ground
+        key_exp_pub_speed = keelson.construct_pubsub_key(
+            base_path=args.realm,
+            entity_id=args.entity_id,
+            subject="speed_over_ground_knots",  
+            source_id=args.source_id,
+        )
+        pub_speed = session.declare_publisher(
+            key_exp_pub_speed,
+            priority=zenoh.Priority.INTERACTIVE_HIGH,
+            congestion_control=zenoh.CongestionControl.DROP,
+        )
+        logging.info(f"Created publisher: {key_exp_pub_speed}")
+
+
 
 
         try:
@@ -158,6 +187,29 @@ if __name__ == "__main__":
                     nmea_sentence = line.decode("utf-8")
 
                     logging.debug(f"Received NMEA utf-8: {nmea_sentence}")
+
+                    # Global Navigation Satellite System Fix Data
+                    # Example NMEA sentence:
+                    # $GNGNS,074641.00,5726.151284,N,01201.950160,E,1,09,0.6,20.6,M,39.0,M,,*59
+                    # -------------------------------------------------
+                    # Field                | Value         | Meaning
+                    # -------------------------------------------------
+                    # Sentence type        | $GNGNS        | Global Navigation Satellite System Fix Data
+                    # Time (UTC)           | 074641.00     | 07:46:41.00 UTC
+                    # Latitude             | 5726.151284   | 57 degrees 26.151284 minutes North
+                    # N/S Indicator        | N             | North
+                    # Longitude            | 01201.950160  | 12 degrees 1.950160 minutes East
+                    # E/W Indicator        | E             | East
+                    # Fix quality          | 1             | GPS fix (0 = invalid, 1 = GPS, 2 = DGPS, etc.)
+                    # Number of satellites | 09            | 9 satellites used
+                    # HDOP                 | 0.6           | Horizontal Dilution of Precision
+                    # Altitude             | 20.6          | 20.6 meters
+                    # Altitude units       | M             | Meters
+                    # Geoid separation     | 39.0          | 39.0 meters
+                    # Geoid separation units | M           | Meters
+                    # Age of diff. GPS data | (empty)      | No differential correction info
+                    # Diff. ref. station ID | (empty)      | No station ID
+                    # Checksum             | *59           | Used to verify data integrity
 
                     if (nmea_sentence.startswith("$GNGNS") and ("GNGNS" in args.publish or "all" in args.publish)):
                         logging.debug( f"NMEA GNGNS: {nmea_sentence}" )
@@ -314,12 +366,25 @@ if __name__ == "__main__":
                         pub_hadop.put(envelope)
                         logging.debug(f"Published HDOP on {key_exp_pub_hadop}")
 
+                    # Global Navigation Satellite System Fix Data
+                    # Example NMEA sentence:
+                    # $GPGSA,A,2,05,16,18,20,23,26,27,29,31,,,,0.9,0.6,0.7*3B
+                    # -------------------------------------------------
+                    # Field                | Value         | Meaning
+                    # -------------------------------------------------
+                    # 1                    | $GPGSA        | GNSS DOP and Active Satellites (GPS source)
+                    # 2                    | A             | Auto selection of 2D/3D fix (vs. manual M)
+                    # 3                    | 2             | 2 = 2D fix (1 = no fix, 3 = 3D fix)
+                    # 4–15                 | 05,16,18,20,23,26,27,29,31 | PRNs (satellite IDs) used in solution (max 12 fields)
+                    # 16                   | 0.9           | PDOP (Position Dilution of Precision) – Overall fix quality
+                    # 17                   | 0.6           | HDOP (Horizontal Dilution of Precision) – Lateral accuracy
+                    # 18                   | 0.7           | VDOP (Vertical Dilution of Precision) – Altitude accuracy
+                    # Checksum             | *3B           | Used for sentence integrity check
+
                     elif (nmea_sentence.startswith("$GPGSA") and ("GPGSA" in args.publish or "all" in args.publish)):
-                        # Parsing GPGSA sentence
                         logging.debug(f"Processing NMEA GPGSA: {nmea_sentence}")
                         nmea_data = pynmea2.parse(nmea_sentence)
 
-                 
                         # HDOP
                         payload_hdop = TimestampedFloat()
                         payload_hdop.timestamp.FromNanoseconds(ingress_timestamp)
@@ -348,8 +413,44 @@ if __name__ == "__main__":
                         logging.debug(f"...published on {key_exp_pub_pdop}")
 
                
+                    # Course over ground and Ground speed
+                    # Example NMEA sentence:
+                    # $GPVTG,206.4,T,205.9,M,0.0,N,0.0,K,A*2D
+                    # -------------------------------------------------
+                    # Field                | Value         | Meaning
+                    # -------------------------------------------------
+                    # 1                    | $GPVTG        | Course over ground and Ground speed
+                    # 2                    | 206.4         | Course in degrees (T = True, M = Magnetic)
+                    # 3                    | T             | True
+                    # 4                    | 205.9         | Magnetic
+                    # 5                    | M             | Magnetic
+                    # 6                    | 0.0           | Speed in knots
+                    # 7                    | N             | Knots
+                    # 8                    | 0.0           | Speed in kilometers per hour
+                    # 9                    | K             | Kilometers per hour
+                    # 10                   | A             | Status (A = Active, V = Void)  
+                    # 11                   | *2D           | Checksum
 
-
+                    elif (nmea_sentence.startswith("$GPVTG") and ("GPVTG" in args.publish or "all" in args.publish)):
+                        logging.debug(f"Processing NMEA GPVTG: {nmea_sentence}")
+                        nmea_data = pynmea2.parse(nmea_sentence)
+                        # Course over ground
+                        payload_course = TimestampedFloat()
+                        payload_course.timestamp.FromNanoseconds(ingress_timestamp)
+                        payload_course.value = float(nmea_data.course)
+                        serialized_payload = payload_course.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        pub_course.put(envelope)
+                        logging.debug(f"...published on {key_exp_pub_course}")
+                        
+                        # Ground speed
+                        payload_speed = TimestampedFloat()
+                        payload_speed.timestamp.FromNanoseconds(ingress_timestamp)
+                        payload_speed.value = float(nmea_data.spd_over_grnd)
+                        serialized_payload = payload_speed.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        pub_speed.put(envelope)
+                        logging.debug(f"...published on {key_exp_pub_speed}")
 
 
                     # TODO: GPGSV - GPS Satellites in View
