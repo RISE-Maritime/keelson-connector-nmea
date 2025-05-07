@@ -63,8 +63,13 @@ if __name__ == "__main__":
 
 
         # SOCAT input stream
-        for line in sys.stdin.buffer:
-
+        #  for line in sys.stdin.buffer:
+        while True:
+            line = sys.stdin.buffer.readline()
+            if not line:
+                time.sleep(0.001)
+                continue
+            
             ingress_timestamp = time.time_ns()
 
             # Publish RAW message
@@ -78,10 +83,10 @@ if __name__ == "__main__":
                 pub_raw.put(envelope)
                 logging.debug(f"...published on {key_exp_pub_raw}")
 
-            logging.debug("Decoding NMEA message...")
 
             try:
                 nmea_sentence = line.decode("utf-8")
+                logging.debug(f"Decoding NMEA message: {nmea_sentence}")
 
                 # Global Navigation Satellite System Fix Data
                 # Example NMEA sentence:
