@@ -36,13 +36,14 @@ if __name__ == "__main__":
     conf = zenoh.Config()
     if args.connect is not None:
         conf.insert_json5(zenoh.config.CONNECT_KEY, json.dumps(args.connect))
+    
     with zenoh.open(conf) as session:
         logging.info("Zenoh session opened.")
 
-        def _on_exit():
-            session.close()
+        # def _on_exit():
+        #     session.close()
 
-        atexit.register(_on_exit)
+        # atexit.register(_on_exit)
 
         #################################################
         # Setting up PUBLISHER
@@ -646,4 +647,4 @@ if __name__ == "__main__":
             logging.error(f"Error: {e}")
 
     logging.info("Zenoh session closed.")
-            
+    sys.exit(0)
