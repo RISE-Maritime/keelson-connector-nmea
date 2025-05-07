@@ -62,589 +62,582 @@ if __name__ == "__main__":
 
 
 
+        # SOCAT input stream
+        for line in sys.stdin.buffer:
 
-        try:
-            # SOCAT input stream
-            for line in sys.stdin.buffer:
-    
-                ingress_timestamp = time.time_ns()
+            ingress_timestamp = time.time_ns()
 
-                # Publish RAW message
-                if any(topic in args.publish for topic in ("raw", "all")):
-                    logging.debug("Publish RAW message...")
-                    payload = TimestampedBytes()
-                    payload.timestamp.FromNanoseconds(ingress_timestamp)
-                    payload.value = line
-                    serialized_payload = payload.SerializeToString()
-                    envelope = keelson.enclose(serialized_payload)
-                    pub_raw.put(envelope)
-                    logging.debug(f"...published on {key_exp_pub_raw}")
+            # Publish RAW message
+            if any(topic in args.publish for topic in ("raw", "all")):
+                logging.debug("Publish RAW message...")
+                payload = TimestampedBytes()
+                payload.timestamp.FromNanoseconds(ingress_timestamp)
+                payload.value = line
+                serialized_payload = payload.SerializeToString()
+                envelope = keelson.enclose(serialized_payload)
+                pub_raw.put(envelope)
+                logging.debug(f"...published on {key_exp_pub_raw}")
 
-                logging.debug("Decoding NMEA message...")
+            logging.debug("Decoding NMEA message...")
 
-                try:
-                    nmea_sentence = line.decode("utf-8")
+            try:
+                nmea_sentence = line.decode("utf-8")
 
-                    # Global Navigation Satellite System Fix Data
-                    # Example NMEA sentence:
-                    # $GNGNS,074641.00,5726.151284,N,01201.950160,E,1,09,0.6,20.6,M,39.0,M,,*59
-                    # -------------------------------------------------
-                    # Field                | Value         | Meaning
-                    # -------------------------------------------------
-                    # Sentence type        | $GNGNS        | Global Navigation Satellite System Fix Data
-                    # Time (UTC)           | 074641.00     | 07:46:41.00 UTC
-                    # Latitude             | 5726.151284   | 57 degrees 26.151284 minutes North
-                    # N/S Indicator        | N             | North
-                    # Longitude            | 01201.950160  | 12 degrees 1.950160 minutes East
-                    # E/W Indicator        | E             | East
-                    # Fix quality          | 1             | GPS fix (0 = invalid, 1 = GPS, 2 = DGPS, etc.)
-                    # Number of satellites | 09            | 9 satellites used
-                    # HDOP                 | 0.6           | Horizontal Dilution of Precision
-                    # Altitude             | 20.6          | 20.6 meters
-                    # Altitude units       | M             | Meters
-                    # Geoid separation     | 39.0          | 39.0 meters
-                    # Geoid separation units | M           | Meters
-                    # Age of diff. GPS data | (empty)      | No differential correction info
-                    # Diff. ref. station ID | (empty)      | No station ID
-                    # Checksum             | *59           | Used to verify data integrity
+                # Global Navigation Satellite System Fix Data
+                # Example NMEA sentence:
+                # $GNGNS,074641.00,5726.151284,N,01201.950160,E,1,09,0.6,20.6,M,39.0,M,,*59
+                # -------------------------------------------------
+                # Field                | Value         | Meaning
+                # -------------------------------------------------
+                # Sentence type        | $GNGNS        | Global Navigation Satellite System Fix Data
+                # Time (UTC)           | 074641.00     | 07:46:41.00 UTC
+                # Latitude             | 5726.151284   | 57 degrees 26.151284 minutes North
+                # N/S Indicator        | N             | North
+                # Longitude            | 01201.950160  | 12 degrees 1.950160 minutes East
+                # E/W Indicator        | E             | East
+                # Fix quality          | 1             | GPS fix (0 = invalid, 1 = GPS, 2 = DGPS, etc.)
+                # Number of satellites | 09            | 9 satellites used
+                # HDOP                 | 0.6           | Horizontal Dilution of Precision
+                # Altitude             | 20.6          | 20.6 meters
+                # Altitude units       | M             | Meters
+                # Geoid separation     | 39.0          | 39.0 meters
+                # Geoid separation units | M           | Meters
+                # Age of diff. GPS data | (empty)      | No differential correction info
+                # Diff. ref. station ID | (empty)      | No station ID
+                # Checksum             | *59           | Used to verify data integrity
 
-                    if (nmea_sentence.startswith("$GNGNS") and ("GNGNS" in args.publish or "all" in args.publish)):
-                        logging.debug( f"NMEA GNGNS: {nmea_sentence}" )
-                        nmea_data = pynmea2.parse(nmea_sentence)
+                if (nmea_sentence.startswith("$GNGNS") and ("GNGNS" in args.publish or "all" in args.publish)):
+                    logging.debug( f"NMEA GNGNS: {nmea_sentence}" )
+                    nmea_data = pynmea2.parse(nmea_sentence)
 
-                        # Create a LocationFix payload
-                        payload_location = LocationFix()
-                        
-                        # Timestamp
-                        nmea_msg_timestamp = nmea_data.timestamp
-                        nmea_msg_timestamp_dt = datetime.combine(datetime.today(), nmea_msg_timestamp, tzinfo=pytz.utc)
-                        logging.debug(f"Timestamp REC: {nmea_msg_timestamp_dt}")
-                        payload_location.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                    # Create a LocationFix payload
+                    payload_location = LocationFix()
+                    
+                    # Timestamp
+                    nmea_msg_timestamp = nmea_data.timestamp
+                    nmea_msg_timestamp_dt = datetime.combine(datetime.today(), nmea_msg_timestamp, tzinfo=pytz.utc)
+                    logging.debug(f"Timestamp REC: {nmea_msg_timestamp_dt}")
+                    payload_location.timestamp.FromDatetime(nmea_msg_timestamp_dt)
 
-                        # Latitude
-                        if nmea_data.lat_dir == "S":
-                            payload_location.latitude = float(-nmea_data.latitude)
-                        else:
-                            payload_location.latitude = float(nmea_data.latitude)
-                        # Longitude
-                        if nmea_data.lon_dir == "W":
-                            payload_location.longitude = float(-nmea_data.longitude)
-                        else:
-                            payload_location.longitude = float(nmea_data.longitude)
-
-                        # Altitude
-                        payload_location.altitude = float(nmea_data.altitude)
-
-                        serialized_payload = payload_location.SerializeToString()
-                        envelope = keelson.enclose(serialized_payload)
-                        key_exp_pub_location_fix_gngns = keelson.construct_pubsub_key(
-                            base_path=args.realm,
-                            entity_id=args.entity_id,
-                            subject="location_fix", 
-                            source_id=args.source_id + "/nmea/GNGNS",
-                        )
-                        session.put(
-                            key_expr=key_exp_pub_location_fix_gngns,
-                            payload=envelope,
-                            priority=zenoh.Priority.INTERACTIVE_HIGH,
-                            congestion_control=zenoh.CongestionControl.DROP,
-                        )
-                        logging.debug(f"...published on {key_exp_pub_location_fix_gngns}")
-
-                        # Satellites used
-                        payload_sat_used = TimestampedInt()
-                        payload_sat_used.timestamp.FromDatetime(nmea_msg_timestamp_dt)
-                        payload_sat_used.value = int(nmea_data.num_sats)
-                        serialized_payload = payload_sat_used.SerializeToString()
-                        envelope = keelson.enclose(serialized_payload)
-                        key_exp_pub_satelites_used = keelson.construct_pubsub_key(
-                            base_path=args.realm,
-                            entity_id=args.entity_id,
-                            subject="location_fix_satellites_used", 
-                            source_id=args.source_id + "/nmea/GNGNS",
-                        )
-                        session.put(
-                            key_expr=key_exp_pub_satelites_used,
-                            payload=envelope,
-                            priority=zenoh.Priority.INTERACTIVE_HIGH,
-                            congestion_control=zenoh.CongestionControl.DROP,
-                        )
-                        logging.debug(f"...published on {key_exp_pub_satelites_used}")
-
-                        # HDOP
-                        payload_hdop = TimestampedFloat()
-                        payload_hdop.timestamp.FromDatetime(nmea_msg_timestamp_dt)
-                        payload_hdop.value = float(nmea_data.hdop)
-                        serialized_payload = payload_hdop.SerializeToString()
-                        envelope = keelson.enclose(serialized_payload)
-                        key_exp_pub_hadop = keelson.construct_pubsub_key(
-                            base_path=args.realm,
-                            entity_id=args.entity_id,
-                            subject="location_fix_hdop",
-                            source_id=args.source_id + "/nmea/GNGNS",
-                        )
-                        session.put(
-                            key_expr=key_exp_pub_hadop,
-                            payload=envelope,
-                            priority=zenoh.Priority.INTERACTIVE_HIGH,
-                            congestion_control=zenoh.CongestionControl.DROP,
-                        )
-                        logging.debug(f"...published on {key_exp_pub_hadop}")
-
-                  
-
-                    # Global Positioning System Fix Data
-                    # Example NMEA sentence: 
-                    # $GPGGA,074641.00,5726.151284,N,01201.950160,E,1,09,0.6,20.6,M,39.0,M,,*59
-                    # -------------------------------------------------
-                    # Field                | Value         | Meaning
-                    # -------------------------------------------------
-                    # Sentence type        | $GPGGA        | Global Positioning System Fix Data
-                    # Time (UTC)           | 074641.00     | 07:46:41.00 UTC
-                    # Latitude             | 5726.151284   | 57 degrees 26.151284 minutes North
-                    # N/S Indicator        | N             | North
-                    # Longitude            | 01201.950160  | 12 degrees 1.950160 minutes East
-                    # E/W Indicator        | E             | East
-                    # Fix quality          | 1             | GPS fix (0 = invalid, 1 = GPS, 2 = DGPS, etc.)
-                    # Number of satellites | 09            | 9 satellites used
-                    # HDOP                 | 0.6           | Horizontal Dilution of Precision
-                    # Altitude             | 20.6          | 20.6 meters
-                    # Altitude units       | M             | Meters
-                    # Geoid separation     | 39.0          | 39.0 meters
-                    # Geoid separation units | M           | Meters
-                    # Age of diff. GPS data | (empty)      | No differential correction info
-                    # Diff. ref. station ID | (empty)      | No station ID
-                    # Checksum             | *59           | Used to verify data integrity
-
-                    elif (nmea_sentence.startswith("$GPGGA") and ("GPGGA" in args.publish or "all" in args.publish)):
-
-                        # Parsing GPGGA sentence
-                        logging.debug(f"Processing NMEA GPGGA: {nmea_sentence}")
-                        nmea_data = pynmea2.parse(nmea_sentence)
-
-                        # Create a LocationFix payload
-                        payload_location = LocationFix()
-
-                        # Timestamp
-                        nmea_msg_timestamp_dt = datetime.combine(
-                            datetime.today(), nmea_data.timestamp, tzinfo=pytz.utc
-                        )
-                        logging.debug(f"Extracted Timestamp: {nmea_msg_timestamp_dt}")
-                        payload_location.timestamp.FromDatetime(nmea_msg_timestamp_dt)
-
-                        # Latitude
-                        payload_location.latitude = (
-                            -float(nmea_data.latitude) if nmea_data.lat_dir == "S" else float(nmea_data.latitude)
-                        )
-
-                        # Longitude
-                        payload_location.longitude = (
-                            -float(nmea_data.longitude) if nmea_data.lon_dir == "W" else float(nmea_data.longitude)
-                        )
-
-                        # Altitude
-                        payload_location.altitude = float(nmea_data.altitude)
-
-                        # Serialize and publish LocationFix
-                        serialized_payload = payload_location.SerializeToString()
-                        envelope = keelson.enclose(serialized_payload)
-                        key_exp_pub_location_fix_gpgga = keelson.construct_pubsub_key(
-                            base_path=args.realm,
-                            entity_id=args.entity_id,
-                            subject="location_fix",
-                            source_id=args.source_id + "/nmea/GPGGA",
-                        )
-                        session.put(
-                            key_expr=key_exp_pub_location_fix_gpgga,
-                            payload=envelope,
-                            priority=zenoh.Priority.INTERACTIVE_HIGH,
-                            congestion_control=zenoh.CongestionControl.DROP,
-                        )
-                        logging.debug(f"Published LocationFix on {key_exp_pub_location_fix_gpgga}")
-
-                        # Satellites used
-                        payload_sat_used = TimestampedInt()
-                        payload_sat_used.timestamp.FromDatetime(nmea_msg_timestamp_dt)
-                        payload_sat_used.value = int(nmea_data.num_sats)
-                        serialized_payload = payload_sat_used.SerializeToString()
-                        envelope = keelson.enclose(serialized_payload)
-                        key_exp_pub_satelites_used = keelson.construct_pubsub_key(
-                            base_path=args.realm,
-                            entity_id=args.entity_id,
-                            subject="location_fix_satellites_used",
-                            source_id=args.source_id + "/nmea/GPGGA",
-                        )
-                        session.put(
-                            key_expr=key_exp_pub_satelites_used,
-                            payload=envelope,
-                            priority=zenoh.Priority.INTERACTIVE_HIGH,
-                            congestion_control=zenoh.CongestionControl.DROP,
-                        )
-                        logging.debug(f"Published Satellites Used on {key_exp_pub_satelites_used}")
-
-                        # HDOP
-                        payload_hdop = TimestampedFloat()
-                        payload_hdop.timestamp.FromDatetime(nmea_msg_timestamp_dt)
-                        payload_hdop.value = float(nmea_data.horizontal_dil)
-                        serialized_payload = payload_hdop.SerializeToString()
-                        envelope = keelson.enclose(serialized_payload)
-                        key_exp_pub_hadop = keelson.construct_pubsub_key(
-                            base_path=args.realm,
-                            entity_id=args.entity_id,
-                            subject="location_fix_hdop",
-                            source_id=args.source_id + "/nmea/GPGGA",
-                        )
-                        session.put(
-                            key_expr=key_exp_pub_hadop,
-                            payload=envelope,
-                            priority=zenoh.Priority.INTERACTIVE_HIGH,
-                            congestion_control=zenoh.CongestionControl.DROP,
-                        )
-                        logging.debug(f"Published HDOP on {key_exp_pub_hadop}")
-
-                    # Global Navigation Satellite System Fix Data
-                    # Example NMEA sentence:
-                    # $GPGSA,A,2,05,16,18,20,23,26,27,29,31,,,,0.9,0.6,0.7*3B
-                    # -------------------------------------------------
-                    # Field                | Value         | Meaning
-                    # -------------------------------------------------
-                    # 1                    | $GPGSA        | GNSS DOP and Active Satellites (GPS source)
-                    # 2                    | A             | Auto selection of 2D/3D fix (vs. manual M)
-                    # 3                    | 2             | 2 = 2D fix (1 = no fix, 3 = 3D fix)
-                    # 4–15                 | 05,16,18,20,23,26,27,29,31 | PRNs (satellite IDs) used in solution (max 12 fields)
-                    # 16                   | 0.9           | PDOP (Position Dilution of Precision) – Overall fix quality
-                    # 17                   | 0.6           | HDOP (Horizontal Dilution of Precision) – Lateral accuracy
-                    # 18                   | 0.7           | VDOP (Vertical Dilution of Precision) – Altitude accuracy
-                    # Checksum             | *3B           | Used for sentence integrity check
-
-                    elif (nmea_sentence.startswith("$GPGSA") and ("GPGSA" in args.publish or "all" in args.publish)):
-                        logging.debug(f"Processing NMEA GPGSA: {nmea_sentence}")
-                        nmea_data = pynmea2.parse(nmea_sentence)
-
-                        # HDOP
-                        payload_hdop = TimestampedFloat()
-                        payload_hdop.timestamp.FromNanoseconds(ingress_timestamp)
-                        payload_hdop.value = float(nmea_data.hdop)
-                        serialized_payload = payload_hdop.SerializeToString()
-                        envelope = keelson.enclose(serialized_payload)
-                        key_exp_pub_hdop = keelson.construct_pubsub_key(
-                            base_path=args.realm,
-                            entity_id=args.entity_id,
-                            subject="location_fix_hdop",
-                            source_id=args.source_id + "/nmea/GPGSA",
-                        )
-                        session.put(
-                            key_expr=key_exp_pub_hdop,
-                            payload=envelope,
-                            priority=zenoh.Priority.INTERACTIVE_HIGH,
-                            congestion_control=zenoh.CongestionControl.DROP,
-                        )
-                        logging.debug(f"...published on {key_exp_pub_hdop}")
-
-                        # VDOP
-                        payload_vdop = TimestampedFloat()
-                        payload_vdop.timestamp.FromNanoseconds(ingress_timestamp)
-                        payload_vdop.value = float(nmea_data.vdop)
-                        serialized_payload = payload_vdop.SerializeToString()
-                        envelope = keelson.enclose(serialized_payload)
-                        key_exp_pub_vdop = keelson.construct_pubsub_key(
-                            base_path=args.realm,
-                            entity_id=args.entity_id,
-                            subject="location_fix_vdop",
-                            source_id=args.source_id + "/nmea/GPGSA",
-                        )
-                        session.put(
-                            key_expr=key_exp_pub_vdop,
-                            payload=envelope,
-                            priority=zenoh.Priority.INTERACTIVE_HIGH,
-                            congestion_control=zenoh.CongestionControl.DROP,
-                        )
-                        logging.debug(f"...published on {key_exp_pub_vdop}")
-
-                        # PDOP
-                        payload_pdop = TimestampedFloat()
-                        payload_pdop.timestamp.FromNanoseconds(ingress_timestamp)
-                        payload_pdop.value = float(nmea_data.pdop)
-                        serialized_payload = payload_pdop.SerializeToString()
-                        envelope = keelson.enclose(serialized_payload)
-                        key_exp_pub_pdop = keelson.construct_pubsub_key(
-                            base_path=args.realm,
-                            entity_id=args.entity_id,
-                            subject="location_fix_pdop",
-                            source_id=args.source_id + "/nmea/GPGSA",
-                        )
-                        session.put(
-                            key_expr=key_exp_pub_pdop,
-                            payload=envelope,
-                            priority=zenoh.Priority.INTERACTIVE_HIGH,
-                            congestion_control=zenoh.CongestionControl.DROP,
-                        )
-                        logging.debug(f"...published on {key_exp_pub_pdop}")
-
-               
-                    # Course over ground and Ground speed
-                    # Example NMEA sentence:
-                    # $GPVTG,206.4,T,205.9,M,0.0,N,0.0,K,A*2D
-                    # -------------------------------------------------
-                    # Field                | Value         | Meaning
-                    # -------------------------------------------------
-                    # 1                    | $GPVTG        | Course over ground and Ground speed
-                    # 2                    | 206.4         | Course in degrees (T = True, M = Magnetic)
-                    # 3                    | T             | True
-                    # 4                    | 205.9         | Magnetic
-                    # 5                    | M             | Magnetic
-                    # 6                    | 0.0           | Speed in knots
-                    # 7                    | N             | Knots
-                    # 8                    | 0.0           | Speed in kilometers per hour
-                    # 9                    | K             | Kilometers per hour
-                    # 10                   | A             | Status (A = Active, V = Void)  
-                    # 11                   | *2D           | Checksum
-
-                    elif (nmea_sentence.startswith("$GPVTG") and ("GPVTG" in args.publish or "all" in args.publish)):
-                        logging.debug(f"Processing NMEA GPVTG: {nmea_sentence}")
-                        nmea_data = pynmea2.parse(nmea_sentence)
-                     
-                        # Course over ground
-                        payload_course = TimestampedFloat()
-                        payload_course.timestamp.FromNanoseconds(ingress_timestamp)
-                        payload_course.value = float(nmea_data.true_track)
-                        serialized_payload = payload_course.SerializeToString()
-                        envelope = keelson.enclose(serialized_payload)
-                        key_exp_pub_course = keelson.construct_pubsub_key(
-                            base_path=args.realm,
-                            entity_id=args.entity_id,
-                            subject="course_over_ground_deg",  
-                            source_id=args.source_id + "/nmea/GPVTG",
-                        )
-                        session.put(
-                            key_expr=key_exp_pub_course,
-                            payload=envelope,
-                            priority=zenoh.Priority.INTERACTIVE_HIGH,
-                            congestion_control=zenoh.CongestionControl.DROP,
-                        )
-                        logging.debug(f"...published on {key_exp_pub_course}")
-                        
-                        # Ground speed
-                        payload_speed = TimestampedFloat()
-                        payload_speed.timestamp.FromNanoseconds(ingress_timestamp)
-                        payload_speed.value = float(nmea_data.spd_over_grnd_kts)
-                        serialized_payload = payload_speed.SerializeToString()
-                        envelope = keelson.enclose(serialized_payload)
-                        key_exp_pub_speed = keelson.construct_pubsub_key(
-                            base_path=args.realm,
-                            entity_id=args.entity_id,
-                            subject="speed_over_ground_knots",
-                            source_id=args.source_id + "/nmea/GPVTG",
-                        )
-                        session.put(
-                            key_expr=key_exp_pub_speed,
-                            payload=envelope,
-                            priority=zenoh.Priority.INTERACTIVE_HIGH,
-                            congestion_control=zenoh.CongestionControl.DROP,
-                        )
-                        logging.debug(f"...published on {key_exp_pub_speed}")
-
-                    # Recommended Minimum Specific GNSS Data
-                    # Example NMEA sentence:
-                    # $GPRMC,090134.00,A,5726.151930,N,01201.950809,E,0.0,256.8,060525,0.5,E,A*34
-                    # -------------------------------------------------
-                    # Field                | Value         | Meaning
-                    # -------------------------------------------------
-                    # 1                    | $GPRMC        | Recommended Minimum Specific GNSS Data
-                    # 2                    | 090134.00     | UTC time: 09:01:34.00
-                    # 3                    | A             | Status: A = Active (valid fix)
-                    # 4                    | 5726.151930   | Latitude: 57 degrees 26.151930 minutes North
-                    # 5                    | N             | North/South Indicator: North
-                    # 6                    | 01201.950809  | Longitude: 12 degrees 1.950809 minutes East
-                    # 7                    | E             | East/West Indicator: East
-                    # 8                    | 0.0           | Speed over ground: 0.0 knots
-                    # 9                    | 256.8         | Track angle: 256.8 degrees (degrees True)
-                    # 10                   | 060525        | Date: 06 May 2025
-                    # 11                   | 0.5           | Magnetic variation: 0.5 degrees
-                    # 12                   | E             | Magnetic variation direction: East
-                    # 13                   | A             | Mode: A = Autonomous GPS fix
-                    # Checksum             | *34           | Verifies data integrity
-
-                    elif (nmea_sentence.startswith("$GPRMC") and ("GPRMC" in args.publish or "all" in args.publish)):
-                        logging.debug(f"Processing NMEA GPRMC: {nmea_sentence}")
-                        nmea_data = pynmea2.parse(nmea_sentence)
-
-                        # logging.debug(f"Extracted FILDS: {nmea_data.fields}")
-
-                        payload_location = LocationFix()
-                        
-                        # Timestamp
-                        nmea_msg_timestamp = nmea_data.timestamp
-                        nmea_msg_timestamp_dt = datetime.combine(datetime.today(), nmea_msg_timestamp, tzinfo=pytz.utc)
-                        payload_location.timestamp.FromDatetime(nmea_msg_timestamp_dt)
-
-                        # Latitude
-                        if nmea_data.lat_dir == "S":
-                            payload_location.latitude = float(-nmea_data.latitude)
-                        else:
-                            payload_location.latitude = float(nmea_data.latitude)
-                        # Longitude
-                        if nmea_data.lon_dir == "W":
-                            payload_location.longitude = float(-nmea_data.longitude)
-                        else:
-                            payload_location.longitude = float(nmea_data.longitude)
-
-                        serialized_payload = payload_location.SerializeToString()
-                        envelope = keelson.enclose(serialized_payload)
-                        key_exp_pub_location_fix_gprmc = keelson.construct_pubsub_key(
-                            base_path=args.realm,
-                            entity_id=args.entity_id,
-                            subject="location_fix", 
-                            source_id=args.source_id + "/nmea/GPRMC",
-                        )
-                        session.put(
-                            key_expr=key_exp_pub_location_fix_gprmc,
-                            payload=envelope,
-                            priority=zenoh.Priority.INTERACTIVE_HIGH,
-                            congestion_control=zenoh.CongestionControl.DROP,
-                        )
-                        logging.debug(f"...published on {key_exp_pub_location_fix_gprmc}")
-
-                        # Course over ground
-                        payload_course = TimestampedFloat()
-                        payload_course.timestamp.FromNanoseconds(ingress_timestamp)
-                        payload_course.value = float(nmea_data.true_course)
-                        serialized_payload = payload_course.SerializeToString()
-                        envelope = keelson.enclose(serialized_payload)
-                        key_exp_pub_course = keelson.construct_pubsub_key(
-                            base_path=args.realm,
-                            entity_id=args.entity_id,
-                            subject="course_over_ground_deg",  
-                            source_id=args.source_id + "/nmea/GPRMC",
-                        )
-                        session.put(
-                            key_expr=key_exp_pub_course,
-                            payload=envelope,
-                            priority=zenoh.Priority.INTERACTIVE_HIGH,
-                            congestion_control=zenoh.CongestionControl.DROP,
-                        )
-                        logging.debug(f"...published on {key_exp_pub_course}")
-
-                        # Ground speed
-                        payload_speed = TimestampedFloat()
-                        payload_speed.timestamp.FromNanoseconds(ingress_timestamp)
-                        payload_speed.value = float(nmea_data.spd_over_grnd)
-                        serialized_payload = payload_speed.SerializeToString()
-                        envelope = keelson.enclose(serialized_payload)
-                        key_exp_pub_speed = keelson.construct_pubsub_key(
-                            base_path=args.realm,
-                            entity_id=args.entity_id,
-                            subject="speed_over_ground_knots",
-                            source_id=args.source_id + "/nmea/GPRMC",
-                        )
-                        session.put(
-                            key_expr=key_exp_pub_speed,
-                            payload=envelope,
-                            priority=zenoh.Priority.INTERACTIVE_HIGH,
-                            congestion_control=zenoh.CongestionControl.DROP,
-                        )
-                        logging.debug(f"...published on {key_exp_pub_speed}")
-
-
-                    # GPGSV - GPS Satellites in View
-                    # GSV messages report information about satellites that the receiver can “see”, 
-                    # including PRN number, elevation, azimuth, and SNR. This sentence is sent once per second, 
-                    # and contains information about all satellites in view. The GSV sentence is usually sent 
-                    # in a series of three sentences.
-                    # Example NMEA sentence:
-                    # $GPGSV,3,1,12,05,27,049,51,16,53,285,47,18,70,140,52,20,05,023,37*72
-                    # $GPGSV,3,2,12,23,16,144,41,26,63,226,46,27,21,270,38,29,32,090,49*7A
-                    # $GPGSV,3,3,12,31,15,217,37,07,01,345,,09,00,317,,49,,,43*4E
-                    # Combine incoming GPGSV messages into a single output
-                    elif (nmea_sentence.startswith("$GPGSV") and ("GPGSV" in args.publish or "all" in args.publish)):
-                        logging.debug(f"Processing NMEA GPGSV: {nmea_sentence}")
-                        
-                        # Function to combine GPGSV messages
-                        def combine_gpgsv_messages(messages):
-                            combined_data = {
-                                "total_messages": 0,
-                                "current_message": 0,
-                                "satellites_in_view": 0,
-                                "satellites": []
-                            }
-                            for msg in messages:
-                                try:
-                                    parsed_msg = pynmea2.parse(msg)
-                                    combined_data["total_messages"] = int(parsed_msg.num_messages)
-                                    combined_data["current_message"] = int(parsed_msg.msg_num)
-                                    combined_data["satellites_in_view"] = int(parsed_msg.num_sv_in_view)
-                                    
-                                    for i in range(4):  # Each GPGSV message can contain up to 4 satellites
-                                        prn = getattr(parsed_msg, f"sv_prn_num_{i+1}", None)
-                                        elevation = getattr(parsed_msg, f"elevation_deg_{i+1}", None)
-                                        azimuth = getattr(parsed_msg, f"azimuth_deg_{i+1}", None)
-                                        snr = getattr(parsed_msg, f"snr_{i+1}", None)
-                                        if prn:
-                                            combined_data["satellites"].append({
-                                                "prn": prn,
-                                                "elevation": elevation,
-                                                "azimuth": azimuth,
-                                                "snr": snr
-                                            })
-                                except Exception as e:
-                                    logging.warning(f"Error parsing GPGSV message: {e}")
-                            return combined_data
-
-        
-                        gpgsv_buffer.append(nmea_sentence)
-
-                        # Check if all GPGSV messages have been received
-                        try:
-                            parsed_msg = pynmea2.parse(nmea_sentence)
-                            total_messages = int(parsed_msg.num_messages)
-                            current_message = int(parsed_msg.msg_num)
-
-                            if current_message == total_messages:
-                                # Combine and process all messages
-                                combined_data = combine_gpgsv_messages(gpgsv_buffer)
-                                gpgsv_buffer = []  # Clear buffer after processing
-
-                                # Serialize and publish combined GPGSV data
-                                payload_gpgsv = TimestampedString()
-                                payload_gpgsv.timestamp.FromNanoseconds(ingress_timestamp)
-                                payload_gpgsv.value = json.dumps(combined_data).encode("utf-8")
-                                serialized_payload = payload_gpgsv.SerializeToString()
-                                envelope = keelson.enclose(serialized_payload)
-                                key_exp_pub_gpgsv = keelson.construct_pubsub_key(
-                                    base_path=args.realm,
-                                    entity_id=args.entity_id,
-                                    subject="raw_json",
-                                    source_id=args.source_id + "/nmea/GPGSV",
-                                )
-                                session.put(
-                                    key_expr=key_exp_pub_gpgsv,
-                                    payload=envelope,
-                                    priority=zenoh.Priority.INTERACTIVE_HIGH,
-                                    congestion_control=zenoh.CongestionControl.DROP,
-                                )
-                                logging.debug(f"Published combined GPGSV data on {key_exp_pub_gpgsv}")
-
-                        except Exception as e:
-                            logging.warning(f"Error processing GPGSV message: {e}")
-
+                    # Latitude
+                    if nmea_data.lat_dir == "S":
+                        payload_location.latitude = float(-nmea_data.latitude)
                     else:
-                        logging.warning(f"Unrecognized NMEA sentence: {nmea_sentence}")
+                        payload_location.latitude = float(nmea_data.latitude)
+                    # Longitude
+                    if nmea_data.lon_dir == "W":
+                        payload_location.longitude = float(-nmea_data.longitude)
+                    else:
+                        payload_location.longitude = float(nmea_data.longitude)
 
-                except pynmea2.ChecksumError as e:
-                    logging.warning(f"Skipping NMEA line due to invalid checksum: {e}")
-                    logging.debug(f"NMEA: {nmea_sentence}")
-                    continue
-                except Exception as e:
-                    logging.error(f"Error parsing NMEA data: {e}")
-                    logging.error( f"NMEA RAW: {nmea_sentence}" )
-                    continue
+                    # Altitude
+                    payload_location.altitude = float(nmea_data.altitude)
+
+                    serialized_payload = payload_location.SerializeToString()
+                    envelope = keelson.enclose(serialized_payload)
+                    key_exp_pub_location_fix_gngns = keelson.construct_pubsub_key(
+                        base_path=args.realm,
+                        entity_id=args.entity_id,
+                        subject="location_fix", 
+                        source_id=args.source_id + "/nmea/GNGNS",
+                    )
+                    session.put(
+                        key_expr=key_exp_pub_location_fix_gngns,
+                        payload=envelope,
+                        priority=zenoh.Priority.INTERACTIVE_HIGH,
+                        congestion_control=zenoh.CongestionControl.DROP,
+                    )
+                    logging.debug(f"...published on {key_exp_pub_location_fix_gngns}")
+
+                    # Satellites used
+                    payload_sat_used = TimestampedInt()
+                    payload_sat_used.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                    payload_sat_used.value = int(nmea_data.num_sats)
+                    serialized_payload = payload_sat_used.SerializeToString()
+                    envelope = keelson.enclose(serialized_payload)
+                    key_exp_pub_satelites_used = keelson.construct_pubsub_key(
+                        base_path=args.realm,
+                        entity_id=args.entity_id,
+                        subject="location_fix_satellites_used", 
+                        source_id=args.source_id + "/nmea/GNGNS",
+                    )
+                    session.put(
+                        key_expr=key_exp_pub_satelites_used,
+                        payload=envelope,
+                        priority=zenoh.Priority.INTERACTIVE_HIGH,
+                        congestion_control=zenoh.CongestionControl.DROP,
+                    )
+                    logging.debug(f"...published on {key_exp_pub_satelites_used}")
+
+                    # HDOP
+                    payload_hdop = TimestampedFloat()
+                    payload_hdop.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                    payload_hdop.value = float(nmea_data.hdop)
+                    serialized_payload = payload_hdop.SerializeToString()
+                    envelope = keelson.enclose(serialized_payload)
+                    key_exp_pub_hadop = keelson.construct_pubsub_key(
+                        base_path=args.realm,
+                        entity_id=args.entity_id,
+                        subject="location_fix_hdop",
+                        source_id=args.source_id + "/nmea/GNGNS",
+                    )
+                    session.put(
+                        key_expr=key_exp_pub_hadop,
+                        payload=envelope,
+                        priority=zenoh.Priority.INTERACTIVE_HIGH,
+                        congestion_control=zenoh.CongestionControl.DROP,
+                    )
+                    logging.debug(f"...published on {key_exp_pub_hadop}")
+
+                
+
+                # Global Positioning System Fix Data
+                # Example NMEA sentence: 
+                # $GPGGA,074641.00,5726.151284,N,01201.950160,E,1,09,0.6,20.6,M,39.0,M,,*59
+                # -------------------------------------------------
+                # Field                | Value         | Meaning
+                # -------------------------------------------------
+                # Sentence type        | $GPGGA        | Global Positioning System Fix Data
+                # Time (UTC)           | 074641.00     | 07:46:41.00 UTC
+                # Latitude             | 5726.151284   | 57 degrees 26.151284 minutes North
+                # N/S Indicator        | N             | North
+                # Longitude            | 01201.950160  | 12 degrees 1.950160 minutes East
+                # E/W Indicator        | E             | East
+                # Fix quality          | 1             | GPS fix (0 = invalid, 1 = GPS, 2 = DGPS, etc.)
+                # Number of satellites | 09            | 9 satellites used
+                # HDOP                 | 0.6           | Horizontal Dilution of Precision
+                # Altitude             | 20.6          | 20.6 meters
+                # Altitude units       | M             | Meters
+                # Geoid separation     | 39.0          | 39.0 meters
+                # Geoid separation units | M           | Meters
+                # Age of diff. GPS data | (empty)      | No differential correction info
+                # Diff. ref. station ID | (empty)      | No station ID
+                # Checksum             | *59           | Used to verify data integrity
+
+                elif (nmea_sentence.startswith("$GPGGA") and ("GPGGA" in args.publish or "all" in args.publish)):
+
+                    # Parsing GPGGA sentence
+                    logging.debug(f"Processing NMEA GPGGA: {nmea_sentence}")
+                    nmea_data = pynmea2.parse(nmea_sentence)
+
+                    # Create a LocationFix payload
+                    payload_location = LocationFix()
+
+                    # Timestamp
+                    nmea_msg_timestamp_dt = datetime.combine(
+                        datetime.today(), nmea_data.timestamp, tzinfo=pytz.utc
+                    )
+                    logging.debug(f"Extracted Timestamp: {nmea_msg_timestamp_dt}")
+                    payload_location.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+
+                    # Latitude
+                    payload_location.latitude = (
+                        -float(nmea_data.latitude) if nmea_data.lat_dir == "S" else float(nmea_data.latitude)
+                    )
+
+                    # Longitude
+                    payload_location.longitude = (
+                        -float(nmea_data.longitude) if nmea_data.lon_dir == "W" else float(nmea_data.longitude)
+                    )
+
+                    # Altitude
+                    payload_location.altitude = float(nmea_data.altitude)
+
+                    # Serialize and publish LocationFix
+                    serialized_payload = payload_location.SerializeToString()
+                    envelope = keelson.enclose(serialized_payload)
+                    key_exp_pub_location_fix_gpgga = keelson.construct_pubsub_key(
+                        base_path=args.realm,
+                        entity_id=args.entity_id,
+                        subject="location_fix",
+                        source_id=args.source_id + "/nmea/GPGGA",
+                    )
+                    session.put(
+                        key_expr=key_exp_pub_location_fix_gpgga,
+                        payload=envelope,
+                        priority=zenoh.Priority.INTERACTIVE_HIGH,
+                        congestion_control=zenoh.CongestionControl.DROP,
+                    )
+                    logging.debug(f"Published LocationFix on {key_exp_pub_location_fix_gpgga}")
+
+                    # Satellites used
+                    payload_sat_used = TimestampedInt()
+                    payload_sat_used.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                    payload_sat_used.value = int(nmea_data.num_sats)
+                    serialized_payload = payload_sat_used.SerializeToString()
+                    envelope = keelson.enclose(serialized_payload)
+                    key_exp_pub_satelites_used = keelson.construct_pubsub_key(
+                        base_path=args.realm,
+                        entity_id=args.entity_id,
+                        subject="location_fix_satellites_used",
+                        source_id=args.source_id + "/nmea/GPGGA",
+                    )
+                    session.put(
+                        key_expr=key_exp_pub_satelites_used,
+                        payload=envelope,
+                        priority=zenoh.Priority.INTERACTIVE_HIGH,
+                        congestion_control=zenoh.CongestionControl.DROP,
+                    )
+                    logging.debug(f"Published Satellites Used on {key_exp_pub_satelites_used}")
+
+                    # HDOP
+                    payload_hdop = TimestampedFloat()
+                    payload_hdop.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                    payload_hdop.value = float(nmea_data.horizontal_dil)
+                    serialized_payload = payload_hdop.SerializeToString()
+                    envelope = keelson.enclose(serialized_payload)
+                    key_exp_pub_hadop = keelson.construct_pubsub_key(
+                        base_path=args.realm,
+                        entity_id=args.entity_id,
+                        subject="location_fix_hdop",
+                        source_id=args.source_id + "/nmea/GPGGA",
+                    )
+                    session.put(
+                        key_expr=key_exp_pub_hadop,
+                        payload=envelope,
+                        priority=zenoh.Priority.INTERACTIVE_HIGH,
+                        congestion_control=zenoh.CongestionControl.DROP,
+                    )
+                    logging.debug(f"Published HDOP on {key_exp_pub_hadop}")
+
+                # Global Navigation Satellite System Fix Data
+                # Example NMEA sentence:
+                # $GPGSA,A,2,05,16,18,20,23,26,27,29,31,,,,0.9,0.6,0.7*3B
+                # -------------------------------------------------
+                # Field                | Value         | Meaning
+                # -------------------------------------------------
+                # 1                    | $GPGSA        | GNSS DOP and Active Satellites (GPS source)
+                # 2                    | A             | Auto selection of 2D/3D fix (vs. manual M)
+                # 3                    | 2             | 2 = 2D fix (1 = no fix, 3 = 3D fix)
+                # 4–15                 | 05,16,18,20,23,26,27,29,31 | PRNs (satellite IDs) used in solution (max 12 fields)
+                # 16                   | 0.9           | PDOP (Position Dilution of Precision) – Overall fix quality
+                # 17                   | 0.6           | HDOP (Horizontal Dilution of Precision) – Lateral accuracy
+                # 18                   | 0.7           | VDOP (Vertical Dilution of Precision) – Altitude accuracy
+                # Checksum             | *3B           | Used for sentence integrity check
+
+                elif (nmea_sentence.startswith("$GPGSA") and ("GPGSA" in args.publish or "all" in args.publish)):
+                    logging.debug(f"Processing NMEA GPGSA: {nmea_sentence}")
+                    nmea_data = pynmea2.parse(nmea_sentence)
+
+                    # HDOP
+                    payload_hdop = TimestampedFloat()
+                    payload_hdop.timestamp.FromNanoseconds(ingress_timestamp)
+                    payload_hdop.value = float(nmea_data.hdop)
+                    serialized_payload = payload_hdop.SerializeToString()
+                    envelope = keelson.enclose(serialized_payload)
+                    key_exp_pub_hdop = keelson.construct_pubsub_key(
+                        base_path=args.realm,
+                        entity_id=args.entity_id,
+                        subject="location_fix_hdop",
+                        source_id=args.source_id + "/nmea/GPGSA",
+                    )
+                    session.put(
+                        key_expr=key_exp_pub_hdop,
+                        payload=envelope,
+                        priority=zenoh.Priority.INTERACTIVE_HIGH,
+                        congestion_control=zenoh.CongestionControl.DROP,
+                    )
+                    logging.debug(f"...published on {key_exp_pub_hdop}")
+
+                    # VDOP
+                    payload_vdop = TimestampedFloat()
+                    payload_vdop.timestamp.FromNanoseconds(ingress_timestamp)
+                    payload_vdop.value = float(nmea_data.vdop)
+                    serialized_payload = payload_vdop.SerializeToString()
+                    envelope = keelson.enclose(serialized_payload)
+                    key_exp_pub_vdop = keelson.construct_pubsub_key(
+                        base_path=args.realm,
+                        entity_id=args.entity_id,
+                        subject="location_fix_vdop",
+                        source_id=args.source_id + "/nmea/GPGSA",
+                    )
+                    session.put(
+                        key_expr=key_exp_pub_vdop,
+                        payload=envelope,
+                        priority=zenoh.Priority.INTERACTIVE_HIGH,
+                        congestion_control=zenoh.CongestionControl.DROP,
+                    )
+                    logging.debug(f"...published on {key_exp_pub_vdop}")
+
+                    # PDOP
+                    payload_pdop = TimestampedFloat()
+                    payload_pdop.timestamp.FromNanoseconds(ingress_timestamp)
+                    payload_pdop.value = float(nmea_data.pdop)
+                    serialized_payload = payload_pdop.SerializeToString()
+                    envelope = keelson.enclose(serialized_payload)
+                    key_exp_pub_pdop = keelson.construct_pubsub_key(
+                        base_path=args.realm,
+                        entity_id=args.entity_id,
+                        subject="location_fix_pdop",
+                        source_id=args.source_id + "/nmea/GPGSA",
+                    )
+                    session.put(
+                        key_expr=key_exp_pub_pdop,
+                        payload=envelope,
+                        priority=zenoh.Priority.INTERACTIVE_HIGH,
+                        congestion_control=zenoh.CongestionControl.DROP,
+                    )
+                    logging.debug(f"...published on {key_exp_pub_pdop}")
+
+            
+                # Course over ground and Ground speed
+                # Example NMEA sentence:
+                # $GPVTG,206.4,T,205.9,M,0.0,N,0.0,K,A*2D
+                # -------------------------------------------------
+                # Field                | Value         | Meaning
+                # -------------------------------------------------
+                # 1                    | $GPVTG        | Course over ground and Ground speed
+                # 2                    | 206.4         | Course in degrees (T = True, M = Magnetic)
+                # 3                    | T             | True
+                # 4                    | 205.9         | Magnetic
+                # 5                    | M             | Magnetic
+                # 6                    | 0.0           | Speed in knots
+                # 7                    | N             | Knots
+                # 8                    | 0.0           | Speed in kilometers per hour
+                # 9                    | K             | Kilometers per hour
+                # 10                   | A             | Status (A = Active, V = Void)  
+                # 11                   | *2D           | Checksum
+
+                elif (nmea_sentence.startswith("$GPVTG") and ("GPVTG" in args.publish or "all" in args.publish)):
+                    logging.debug(f"Processing NMEA GPVTG: {nmea_sentence}")
+                    nmea_data = pynmea2.parse(nmea_sentence)
+                    
+                    # Course over ground
+                    payload_course = TimestampedFloat()
+                    payload_course.timestamp.FromNanoseconds(ingress_timestamp)
+                    payload_course.value = float(nmea_data.true_track)
+                    serialized_payload = payload_course.SerializeToString()
+                    envelope = keelson.enclose(serialized_payload)
+                    key_exp_pub_course = keelson.construct_pubsub_key(
+                        base_path=args.realm,
+                        entity_id=args.entity_id,
+                        subject="course_over_ground_deg",  
+                        source_id=args.source_id + "/nmea/GPVTG",
+                    )
+                    session.put(
+                        key_expr=key_exp_pub_course,
+                        payload=envelope,
+                        priority=zenoh.Priority.INTERACTIVE_HIGH,
+                        congestion_control=zenoh.CongestionControl.DROP,
+                    )
+                    logging.debug(f"...published on {key_exp_pub_course}")
+                    
+                    # Ground speed
+                    payload_speed = TimestampedFloat()
+                    payload_speed.timestamp.FromNanoseconds(ingress_timestamp)
+                    payload_speed.value = float(nmea_data.spd_over_grnd_kts)
+                    serialized_payload = payload_speed.SerializeToString()
+                    envelope = keelson.enclose(serialized_payload)
+                    key_exp_pub_speed = keelson.construct_pubsub_key(
+                        base_path=args.realm,
+                        entity_id=args.entity_id,
+                        subject="speed_over_ground_knots",
+                        source_id=args.source_id + "/nmea/GPVTG",
+                    )
+                    session.put(
+                        key_expr=key_exp_pub_speed,
+                        payload=envelope,
+                        priority=zenoh.Priority.INTERACTIVE_HIGH,
+                        congestion_control=zenoh.CongestionControl.DROP,
+                    )
+                    logging.debug(f"...published on {key_exp_pub_speed}")
+
+                # Recommended Minimum Specific GNSS Data
+                # Example NMEA sentence:
+                # $GPRMC,090134.00,A,5726.151930,N,01201.950809,E,0.0,256.8,060525,0.5,E,A*34
+                # -------------------------------------------------
+                # Field                | Value         | Meaning
+                # -------------------------------------------------
+                # 1                    | $GPRMC        | Recommended Minimum Specific GNSS Data
+                # 2                    | 090134.00     | UTC time: 09:01:34.00
+                # 3                    | A             | Status: A = Active (valid fix)
+                # 4                    | 5726.151930   | Latitude: 57 degrees 26.151930 minutes North
+                # 5                    | N             | North/South Indicator: North
+                # 6                    | 01201.950809  | Longitude: 12 degrees 1.950809 minutes East
+                # 7                    | E             | East/West Indicator: East
+                # 8                    | 0.0           | Speed over ground: 0.0 knots
+                # 9                    | 256.8         | Track angle: 256.8 degrees (degrees True)
+                # 10                   | 060525        | Date: 06 May 2025
+                # 11                   | 0.5           | Magnetic variation: 0.5 degrees
+                # 12                   | E             | Magnetic variation direction: East
+                # 13                   | A             | Mode: A = Autonomous GPS fix
+                # Checksum             | *34           | Verifies data integrity
+
+                elif (nmea_sentence.startswith("$GPRMC") and ("GPRMC" in args.publish or "all" in args.publish)):
+                    logging.debug(f"Processing NMEA GPRMC: {nmea_sentence}")
+                    nmea_data = pynmea2.parse(nmea_sentence)
+
+                    # logging.debug(f"Extracted FILDS: {nmea_data.fields}")
+
+                    payload_location = LocationFix()
+                    
+                    # Timestamp
+                    nmea_msg_timestamp = nmea_data.timestamp
+                    nmea_msg_timestamp_dt = datetime.combine(datetime.today(), nmea_msg_timestamp, tzinfo=pytz.utc)
+                    payload_location.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+
+                    # Latitude
+                    if nmea_data.lat_dir == "S":
+                        payload_location.latitude = float(-nmea_data.latitude)
+                    else:
+                        payload_location.latitude = float(nmea_data.latitude)
+                    # Longitude
+                    if nmea_data.lon_dir == "W":
+                        payload_location.longitude = float(-nmea_data.longitude)
+                    else:
+                        payload_location.longitude = float(nmea_data.longitude)
+
+                    serialized_payload = payload_location.SerializeToString()
+                    envelope = keelson.enclose(serialized_payload)
+                    key_exp_pub_location_fix_gprmc = keelson.construct_pubsub_key(
+                        base_path=args.realm,
+                        entity_id=args.entity_id,
+                        subject="location_fix", 
+                        source_id=args.source_id + "/nmea/GPRMC",
+                    )
+                    session.put(
+                        key_expr=key_exp_pub_location_fix_gprmc,
+                        payload=envelope,
+                        priority=zenoh.Priority.INTERACTIVE_HIGH,
+                        congestion_control=zenoh.CongestionControl.DROP,
+                    )
+                    logging.debug(f"...published on {key_exp_pub_location_fix_gprmc}")
+
+                    # Course over ground
+                    payload_course = TimestampedFloat()
+                    payload_course.timestamp.FromNanoseconds(ingress_timestamp)
+                    payload_course.value = float(nmea_data.true_course)
+                    serialized_payload = payload_course.SerializeToString()
+                    envelope = keelson.enclose(serialized_payload)
+                    key_exp_pub_course = keelson.construct_pubsub_key(
+                        base_path=args.realm,
+                        entity_id=args.entity_id,
+                        subject="course_over_ground_deg",  
+                        source_id=args.source_id + "/nmea/GPRMC",
+                    )
+                    session.put(
+                        key_expr=key_exp_pub_course,
+                        payload=envelope,
+                        priority=zenoh.Priority.INTERACTIVE_HIGH,
+                        congestion_control=zenoh.CongestionControl.DROP,
+                    )
+                    logging.debug(f"...published on {key_exp_pub_course}")
+
+                    # Ground speed
+                    payload_speed = TimestampedFloat()
+                    payload_speed.timestamp.FromNanoseconds(ingress_timestamp)
+                    payload_speed.value = float(nmea_data.spd_over_grnd)
+                    serialized_payload = payload_speed.SerializeToString()
+                    envelope = keelson.enclose(serialized_payload)
+                    key_exp_pub_speed = keelson.construct_pubsub_key(
+                        base_path=args.realm,
+                        entity_id=args.entity_id,
+                        subject="speed_over_ground_knots",
+                        source_id=args.source_id + "/nmea/GPRMC",
+                    )
+                    session.put(
+                        key_expr=key_exp_pub_speed,
+                        payload=envelope,
+                        priority=zenoh.Priority.INTERACTIVE_HIGH,
+                        congestion_control=zenoh.CongestionControl.DROP,
+                    )
+                    logging.debug(f"...published on {key_exp_pub_speed}")
+
+
+                # GPGSV - GPS Satellites in View
+                # GSV messages report information about satellites that the receiver can “see”, 
+                # including PRN number, elevation, azimuth, and SNR. This sentence is sent once per second, 
+                # and contains information about all satellites in view. The GSV sentence is usually sent 
+                # in a series of three sentences.
+                # Example NMEA sentence:
+                # $GPGSV,3,1,12,05,27,049,51,16,53,285,47,18,70,140,52,20,05,023,37*72
+                # $GPGSV,3,2,12,23,16,144,41,26,63,226,46,27,21,270,38,29,32,090,49*7A
+                # $GPGSV,3,3,12,31,15,217,37,07,01,345,,09,00,317,,49,,,43*4E
+                # Combine incoming GPGSV messages into a single output
+                elif (nmea_sentence.startswith("$GPGSV") and ("GPGSV" in args.publish or "all" in args.publish)):
+                    logging.debug(f"Processing NMEA GPGSV: {nmea_sentence}")
+                    
+                    # Function to combine GPGSV messages
+                    def combine_gpgsv_messages(messages):
+                        combined_data = {
+                            "total_messages": 0,
+                            "current_message": 0,
+                            "satellites_in_view": 0,
+                            "satellites": []
+                        }
+                        for msg in messages:
+                            try:
+                                parsed_msg = pynmea2.parse(msg)
+                                combined_data["total_messages"] = int(parsed_msg.num_messages)
+                                combined_data["current_message"] = int(parsed_msg.msg_num)
+                                combined_data["satellites_in_view"] = int(parsed_msg.num_sv_in_view)
+                                
+                                for i in range(4):  # Each GPGSV message can contain up to 4 satellites
+                                    prn = getattr(parsed_msg, f"sv_prn_num_{i+1}", None)
+                                    elevation = getattr(parsed_msg, f"elevation_deg_{i+1}", None)
+                                    azimuth = getattr(parsed_msg, f"azimuth_deg_{i+1}", None)
+                                    snr = getattr(parsed_msg, f"snr_{i+1}", None)
+                                    if prn:
+                                        combined_data["satellites"].append({
+                                            "prn": prn,
+                                            "elevation": elevation,
+                                            "azimuth": azimuth,
+                                            "snr": snr
+                                        })
+                            except Exception as e:
+                                logging.warning(f"Error parsing GPGSV message: {e}")
+                        return combined_data
+
+    
+                    gpgsv_buffer.append(nmea_sentence)
+
+                    # Check if all GPGSV messages have been received
+                    try:
+                        parsed_msg = pynmea2.parse(nmea_sentence)
+                        total_messages = int(parsed_msg.num_messages)
+                        current_message = int(parsed_msg.msg_num)
+
+                        if current_message == total_messages:
+                            # Combine and process all messages
+                            combined_data = combine_gpgsv_messages(gpgsv_buffer)
+                            gpgsv_buffer = []  # Clear buffer after processing
+
+                            # Serialize and publish combined GPGSV data
+                            payload_gpgsv = TimestampedString()
+                            payload_gpgsv.timestamp.FromNanoseconds(ingress_timestamp)
+                            payload_gpgsv.value = json.dumps(combined_data).encode("utf-8")
+                            serialized_payload = payload_gpgsv.SerializeToString()
+                            envelope = keelson.enclose(serialized_payload)
+                            key_exp_pub_gpgsv = keelson.construct_pubsub_key(
+                                base_path=args.realm,
+                                entity_id=args.entity_id,
+                                subject="raw_json",
+                                source_id=args.source_id + "/nmea/GPGSV",
+                            )
+                            session.put(
+                                key_expr=key_exp_pub_gpgsv,
+                                payload=envelope,
+                                priority=zenoh.Priority.INTERACTIVE_HIGH,
+                                congestion_control=zenoh.CongestionControl.DROP,
+                            )
+                            logging.debug(f"Published combined GPGSV data on {key_exp_pub_gpgsv}")
+
+                    except Exception as e:
+                        logging.warning(f"Error processing GPGSV message: {e}")
+
+                else:
+                    logging.warning(f"Unrecognized NMEA sentence: {nmea_sentence}")
+
+            except pynmea2.ChecksumError as e:
+                logging.warning(f"Skipping NMEA line due to invalid checksum: {e}")
+                logging.debug(f"NMEA: {nmea_sentence}")
+                continue
+            except Exception as e:
+                logging.error(f"Error parsing NMEA data: {e}")
+                logging.error( f"NMEA RAW: {nmea_sentence}" )
+                continue
 
  
-        except KeyboardInterrupt:
-            logging.info("Closing down on user request!")
-            logging.debug("Done! Good bye :)")
-        except Exception as e:
-            logging.error(f"Error: {e}")
 
     logging.info("Zenoh session closed.")
     sys.exit(0)
