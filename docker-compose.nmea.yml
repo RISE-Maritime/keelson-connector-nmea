@@ -17,6 +17,7 @@ services:
     container_name: keelson-connector-nmea-usb
     restart: unless-stopped
     network_mode: "host"
+    privileged: true
     devices:
       - /dev/ttyUSB1:/dev/ttyUSB1
     command: ["socat /dev/ttyUSB1,raw,echo=0,b115200 - | main --log-level 10 -r rise -e ssrs18 -s sealog --publish all"]
