@@ -8,6 +8,7 @@ import json
 import time
 import keelson
 from terminal_inputs import terminal_inputs
+from nmea_utils import extract_rot_value
 from datetime import datetime
 from keelson.payloads.Primitives_pb2 import TimestampedBytes, TimestampedInt, TimestampedFloat, TimestampedString
 from keelson.payloads.foxglove.LocationFix_pb2 import LocationFix
@@ -547,6 +548,37 @@ if __name__ == "__main__":
                         congestion_control=zenoh.CongestionControl.DROP,
                     )
                     logging.debug(f"...published on {key_exp_pub_speed}")
+
+                # Rate of Turn
+                # Example NMEA sentence:
+                # $GPROT,0.0,A*hh
+                # 1                    | $GPROT        | Rate of Turn message
+                # 2                    | 0.0           | Rate of turn in degrees per minute
+                # 3                    | A             | Status (A = data valid)
+
+                elif (nmea_sentence.startswith("$GPROT") or nmea_sentence.startswith("$GNROT")) and ("ROT" in args.publish or "all" in args.publish):
+                    logging.debug(f"Processing NMEA ROT: {nmea_sentence}")
+                    rot_numeric = extract_rot_value(nmea_sentence)
+                    if rot_numeric is not None:
+
+                        payload_rot = TimestampedFloat()
+                        payload_rot.timestamp.FromNanoseconds(ingress_timestamp)
+                        payload_rot.value = rot_numeric
+                        serialized_payload = payload_rot.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        key_exp_pub_rot = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="turn_rate_deg_per_min",
+                            source_id=args.source_id + "/nmea/ROT",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_rot,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"...published on {key_exp_pub_rot}")
 
 
                 # GPGSV - GPS Satellites in View
