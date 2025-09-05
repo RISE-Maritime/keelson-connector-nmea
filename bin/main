@@ -10,7 +10,7 @@ import keelson
 from terminal_inputs import terminal_inputs
 from nmea_utils import extract_rot_value
 from datetime import datetime
-from keelson.payloads.Primitives_pb2 import TimestampedBytes, TimestampedInt, TimestampedFloat, TimestampedString
+from keelson.payloads.Primitives_pb2 import TimestampedBytes, TimestampedInt, TimestampedFloat, TimestampedString, TimestampedTimestamp
 from keelson.payloads.foxglove.LocationFix_pb2 import LocationFix
 import pynmea2
 import sys
@@ -569,7 +569,7 @@ if __name__ == "__main__":
                         key_exp_pub_rot = keelson.construct_pubsub_key(
                             base_path=args.realm,
                             entity_id=args.entity_id,
-                            subject="turn_rate_deg_per_min",
+                            subject="yaw_rate_degps",
                             source_id=args.source_id + "/nmea/ROT",
                         )
                         session.put(
@@ -579,6 +579,462 @@ if __name__ == "__main__":
                             congestion_control=zenoh.CongestionControl.DROP,
                         )
                         logging.debug(f"...published on {key_exp_pub_rot}")
+
+                # GNGST - GPS/GNSS pseudorange error statistics
+                # Example NMEA sentence:
+                # $GNGST,104534.00,1.6,1.4,3.2,15.0,2.1,5.8,4.6*75
+                # -------------------------------------------------
+                # Field                | Value         | Meaning
+                # -------------------------------------------------
+                # 1                    | $GNGST        | GPS/GNSS pseudorange error statistics
+                # 2                    | 104534.00     | UTC time: 10:45:34.00
+                # 3                    | 1.6           | RMS value of standard deviation of range inputs (meters)
+                # 4                    | 1.4           | Standard deviation of semi-major axis of error ellipse (meters)
+                # 5                    | 3.2           | Standard deviation of semi-minor axis of error ellipse (meters)
+                # 6                    | 15.0          | Orientation of semi-major axis (degrees from true north)
+                # 7                    | 2.1           | Standard deviation of latitude error (meters)
+                # 8                    | 5.8           | Standard deviation of longitude error (meters)
+                # 9                    | 4.6           | Standard deviation of altitude error (meters)
+                # Checksum             | *75           | Used to verify data integrity
+
+                elif (nmea_sentence.startswith("$GNGST") and ("GNGST" in args.publish or "all" in args.publish)):
+                    logging.debug(f"Processing NMEA GNGST: {nmea_sentence}")
+                    nmea_data = pynmea2.parse(nmea_sentence)
+
+                    # Timestamp from GNGST message
+                    if nmea_data.timestamp is not None:
+                        nmea_msg_timestamp_dt = datetime.combine(datetime.today(), nmea_data.timestamp, tzinfo=pytz.utc)
+                    else:
+                        # Use ingress timestamp if no timestamp in GNGST message
+                        nmea_msg_timestamp_dt = datetime.fromtimestamp(ingress_timestamp / 1e9, tz=pytz.utc)
+                    
+                    # RMS value of standard deviation of range inputs
+                    if nmea_data.rms is not None:
+                        payload_rms = TimestampedFloat()
+                        payload_rms.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_rms.value = float(nmea_data.rms)
+                        serialized_payload = payload_rms.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        key_exp_pub_rms = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="gnss_error_rms_meters",
+                            source_id=args.source_id + "/nmea/GNGST",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_rms,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"...published RMS on {key_exp_pub_rms}")
+
+                    # Standard deviation of semi-major axis
+                    if nmea_data.std_dev_major is not None:
+                        payload_major = TimestampedFloat()
+                        payload_major.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_major.value = float(nmea_data.std_dev_major)
+                        serialized_payload = payload_major.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        key_exp_pub_major = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="gnss_error_semi_major_axis_meters",
+                            source_id=args.source_id + "/nmea/GNGST",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_major,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"...published semi-major axis on {key_exp_pub_major}")
+
+                    # Standard deviation of semi-minor axis
+                    if nmea_data.std_dev_minor is not None:
+                        payload_minor = TimestampedFloat()
+                        payload_minor.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_minor.value = float(nmea_data.std_dev_minor)
+                        serialized_payload = payload_minor.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        key_exp_pub_minor = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="gnss_error_semi_minor_axis_meters",
+                            source_id=args.source_id + "/nmea/GNGST",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_minor,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"...published semi-minor axis on {key_exp_pub_minor}")
+
+                    # Orientation of semi-major axis
+                    if nmea_data.orientation is not None:
+                        payload_orientation = TimestampedFloat()
+                        payload_orientation.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_orientation.value = float(nmea_data.orientation)
+                        serialized_payload = payload_orientation.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        key_exp_pub_orientation = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="gnss_error_orientation_degrees",
+                            source_id=args.source_id + "/nmea/GNGST",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_orientation,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"...published orientation on {key_exp_pub_orientation}")
+
+                    # Standard deviation of latitude error
+                    if nmea_data.std_dev_latitude is not None:
+                        payload_lat_error = TimestampedFloat()
+                        payload_lat_error.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_lat_error.value = float(nmea_data.std_dev_latitude)
+                        serialized_payload = payload_lat_error.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        key_exp_pub_lat_error = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="gnss_error_latitude_meters",
+                            source_id=args.source_id + "/nmea/GNGST",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_lat_error,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"...published latitude error on {key_exp_pub_lat_error}")
+
+                    # Standard deviation of longitude error
+                    if nmea_data.std_dev_longitude is not None:
+                        payload_lon_error = TimestampedFloat()
+                        payload_lon_error.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_lon_error.value = float(nmea_data.std_dev_longitude)
+                        serialized_payload = payload_lon_error.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        key_exp_pub_lon_error = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="gnss_error_longitude_meters",
+                            source_id=args.source_id + "/nmea/GNGST",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_lon_error,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"...published longitude error on {key_exp_pub_lon_error}")
+
+                    # Standard deviation of altitude error
+                    if nmea_data.std_dev_altitude is not None:
+                        payload_alt_error = TimestampedFloat()
+                        payload_alt_error.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_alt_error.value = float(nmea_data.std_dev_altitude)
+                        serialized_payload = payload_alt_error.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        key_exp_pub_alt_error = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="gnss_error_altitude_meters",
+                            source_id=args.source_id + "/nmea/GNGST",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_alt_error,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"...published altitude error on {key_exp_pub_alt_error}")
+
+                # GNZDA - Date and Time
+                # Example NMEA sentence:
+                # $GNZDA,104534.00,05,09,2025,00,00*76
+                # -------------------------------------------------
+                # Field                | Value         | Meaning
+                # -------------------------------------------------
+                # 1                    | $GNZDA        | Date and Time message
+                # 2                    | 104534.00     | UTC time: 10:45:34.00
+                # 3                    | 05            | Day: 05
+                # 4                    | 09            | Month: 09 (September)
+                # 5                    | 2025          | Year: 2025
+                # 6                    | 00            | Local zone description: 00 hours
+                # 7                    | 00            | Local zone description: 00 minutes
+                # Checksum             | *76           | Used to verify data integrity
+
+                elif (nmea_sentence.startswith("$GNZDA") and ("GNZDA" in args.publish or "all" in args.publish)):
+                    logging.debug(f"Processing NMEA GNZDA: {nmea_sentence}")
+                    nmea_data = pynmea2.parse(nmea_sentence)
+
+                    # Construct full datetime from GNZDA message (has complete date and time)
+                    if all([nmea_data.day, nmea_data.month, nmea_data.year, nmea_data.timestamp]):
+                        try:
+                            full_datetime = datetime.combine(
+                                datetime(int(nmea_data.year), int(nmea_data.month), int(nmea_data.day)),
+                                nmea_data.timestamp,
+                                tzinfo=pytz.utc
+                            )
+                            
+                            # Publish complete datetime as timestamp
+                            payload_datetime = TimestampedTimestamp()
+                            payload_datetime.timestamp.FromDatetime(full_datetime)
+                            payload_datetime.value.FromDatetime(full_datetime)
+                            serialized_payload = payload_datetime.SerializeToString()
+                            envelope = keelson.enclose(serialized_payload)
+                            key_exp_pub_datetime = keelson.construct_pubsub_key(
+                                base_path=args.realm,
+                                entity_id=args.entity_id,
+                                subject="timestamp",
+                                source_id=args.source_id + "/nmea/GNZDA/utc_complete",
+                            )
+                            session.put(
+                                key_expr=key_exp_pub_datetime,
+                                payload=envelope,
+                                priority=zenoh.Priority.INTERACTIVE_HIGH,
+                                congestion_control=zenoh.CongestionControl.DROP,
+                            )
+                            logging.debug(f"...published datetime on {key_exp_pub_datetime}")
+                                
+                        except (ValueError, TypeError) as e:
+                            logging.warning(f"Failed to construct datetime from GNZDA message: {e}")
+                            logging.debug(f"GNZDA values - day: {nmea_data.day}, month: {nmea_data.month}, year: {nmea_data.year}, time: {nmea_data.timestamp}")
+
+                # PASHR - RT300 proprietary roll and pitch sentence
+                # Example NMEA sentence:
+                # $PASHR,104534.00,45.2,T,-2.5,3.8,0.5,0.1,0.1,0.2,1,0*33
+                # -------------------------------------------------
+                # Field                | Value         | Meaning
+                # -------------------------------------------------
+                # 1                    | $PASHR        | RT300 proprietary roll and pitch sentence
+                # 2                    | 104534.00     | UTC time: 10:45:34.00
+                # 3                    | 45.2          | Heading angle (degrees)
+                # 4                    | T             | True heading flag (T/M for True/Magnetic)
+                # 5                    | -2.5          | Roll angle (degrees, positive = port side down)
+                # 6                    | 3.8           | Pitch angle (degrees, positive = bow up)
+                # 7                    | 0.5           | Heave (meters, positive = up)
+                # 8                    | 0.1           | Roll accuracy estimate (degrees, 1-sigma)
+                # 9                    | 0.1           | Pitch accuracy estimate (degrees, 1-sigma)
+                # 10                   | 0.2           | Heading accuracy estimate (degrees, 1-sigma)
+                # 11                   | 1             | Aiding status (0=GPS only, 1=GPS+inertial)
+                # 12                   | 0             | IMU status (0=good)
+                # Checksum             | *33           | Used to verify data integrity
+
+                elif (nmea_sentence.startswith("$PASHR") and ("PASHR" in args.publish or "all" in args.publish)):
+                    logging.debug(f"Processing NMEA PASHR: {nmea_sentence}")
+                    nmea_data = pynmea2.parse(nmea_sentence)
+
+                    # Timestamp from PASHR message
+                    if nmea_data.timestamp is not None:
+                        nmea_msg_timestamp_dt = datetime.combine(datetime.today(), nmea_data.timestamp, tzinfo=pytz.utc)
+                    else:
+                        # Use ingress timestamp if no timestamp in PASHR message
+                        nmea_msg_timestamp_dt = datetime.fromtimestamp(ingress_timestamp / 1e9, tz=pytz.utc)
+
+                    # Heading angle
+                    if nmea_data.true_heading is not None:
+                        payload_heading = TimestampedFloat()
+                        payload_heading.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_heading.value = float(nmea_data.true_heading)
+                        serialized_payload = payload_heading.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        
+                        # Use appropriate subject name based on true/magnetic heading (updated to match schema)
+                        if nmea_data.is_true_heading == "T":
+                            heading_subject = "heading_true_north_deg"
+                            heading_type = "true north"
+                        else:
+                            heading_subject = "heading_magnetic_deg"
+                            heading_type = "magnetic"
+                            
+                        key_exp_pub_heading = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject=heading_subject,
+                            source_id=args.source_id + "/nmea/PASHR",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_heading,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"...published {heading_type} heading on {key_exp_pub_heading}")
+
+                    # Roll angle (updated to match schema)
+                    if nmea_data.roll is not None:
+                        payload_roll = TimestampedFloat()
+                        payload_roll.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_roll.value = float(nmea_data.roll)
+                        serialized_payload = payload_roll.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        key_exp_pub_roll = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="roll_deg",
+                            source_id=args.source_id + "/nmea/PASHR",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_roll,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"...published roll on {key_exp_pub_roll}")
+
+                    # Pitch angle (updated to match schema)
+                    if nmea_data.pitch is not None:
+                        payload_pitch = TimestampedFloat()
+                        payload_pitch.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_pitch.value = float(nmea_data.pitch)
+                        serialized_payload = payload_pitch.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        key_exp_pub_pitch = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="pitch_deg",
+                            source_id=args.source_id + "/nmea/PASHR",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_pitch,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"...published pitch on {key_exp_pub_pitch}")
+
+                    # Heave (updated to match schema)
+                    if nmea_data.heave is not None:
+                        payload_heave = TimestampedFloat()
+                        payload_heave.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_heave.value = float(nmea_data.heave)
+                        serialized_payload = payload_heave.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        key_exp_pub_heave = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="heave_m",
+                            source_id=args.source_id + "/nmea/PASHR",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_heave,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"...published heave on {key_exp_pub_heave}")
+
+                    # Roll accuracy (suggested new subject following schema pattern)
+                    if nmea_data.roll_accuracy is not None:
+                        payload_roll_acc = TimestampedFloat()
+                        payload_roll_acc.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_roll_acc.value = float(nmea_data.roll_accuracy)
+                        serialized_payload = payload_roll_acc.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        key_exp_pub_roll_acc = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="roll_accuracy_deg",
+                            source_id=args.source_id + "/nmea/PASHR",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_roll_acc,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"...published roll accuracy on {key_exp_pub_roll_acc}")
+
+                    # Pitch accuracy (suggested new subject following schema pattern)
+                    if nmea_data.pitch_accuracy is not None:
+                        payload_pitch_acc = TimestampedFloat()
+                        payload_pitch_acc.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_pitch_acc.value = float(nmea_data.pitch_accuracy)
+                        serialized_payload = payload_pitch_acc.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        key_exp_pub_pitch_acc = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="pitch_accuracy_deg",
+                            source_id=args.source_id + "/nmea/PASHR",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_pitch_acc,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"...published pitch accuracy on {key_exp_pub_pitch_acc}")
+
+                    # Heading accuracy (suggested new subject following schema pattern)
+                    if nmea_data.heading_accuracy is not None:
+                        payload_heading_acc = TimestampedFloat()
+                        payload_heading_acc.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_heading_acc.value = float(nmea_data.heading_accuracy)
+                        serialized_payload = payload_heading_acc.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        key_exp_pub_heading_acc = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="heading_accuracy_deg",
+                            source_id=args.source_id + "/nmea/PASHR",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_heading_acc,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"...published heading accuracy on {key_exp_pub_heading_acc}")
+
+                    # Aiding status (suggested new subject following schema pattern)
+                    if nmea_data.aiding_status is not None:
+                        payload_aiding = TimestampedInt()
+                        payload_aiding.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_aiding.value = int(nmea_data.aiding_status)
+                        serialized_payload = payload_aiding.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        key_exp_pub_aiding = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="gnss_aiding_status",
+                            source_id=args.source_id + "/nmea/PASHR",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_aiding,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"...published aiding status on {key_exp_pub_aiding}")
+
+                    # IMU status (suggested new subject following schema pattern)
+                    if nmea_data.imu_status is not None:
+                        payload_imu = TimestampedInt()
+                        payload_imu.timestamp.FromDatetime(nmea_msg_timestamp_dt)
+                        payload_imu.value = int(nmea_data.imu_status)
+                        serialized_payload = payload_imu.SerializeToString()
+                        envelope = keelson.enclose(serialized_payload)
+                        key_exp_pub_imu = keelson.construct_pubsub_key(
+                            base_path=args.realm,
+                            entity_id=args.entity_id,
+                            subject="imu_system_status",
+                            source_id=args.source_id + "/nmea/PASHR",
+                        )
+                        session.put(
+                            key_expr=key_exp_pub_imu,
+                            payload=envelope,
+                            priority=zenoh.Priority.INTERACTIVE_HIGH,
+                            congestion_control=zenoh.CongestionControl.DROP,
+                        )
+                        logging.debug(f"...published IMU status on {key_exp_pub_imu}")
 
 
                 # GPGSV - GPS Satellites in View
