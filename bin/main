@@ -86,8 +86,21 @@ if __name__ == "__main__":
 
 
             try:
-                nmea_sentence = line.decode("utf-8")
+                nmea_sentence = line.decode("utf-8").strip()
                 logging.debug(f"Decoding NMEA message: {nmea_sentence}")
+                
+                # Clean up corrupted NMEA sentences by extracting valid NMEA part
+                # Look for the last occurrence of $ which should be the start of a valid NMEA sentence
+                dollar_index = nmea_sentence.rfind('$')
+                if dollar_index > 0:
+                    # Extract the NMEA sentence starting from the last $
+                    cleaned_sentence = nmea_sentence[dollar_index:].strip()
+                    logging.debug(f"Cleaned corrupted sentence: {nmea_sentence} -> {cleaned_sentence}")
+                    nmea_sentence = cleaned_sentence
+                elif not nmea_sentence.startswith('$'):
+                    # Skip sentences that don't start with $ after cleaning
+                    logging.debug(f"Skipping non-NMEA sentence: {nmea_sentence}")
+                    continue
 
                 # Global Navigation Satellite System Fix Data
                 # Example NMEA sentence:
