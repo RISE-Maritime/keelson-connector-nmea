@@ -32,8 +32,19 @@ The `experimental` folder contains Jupyter notebooks and recorded JSON examples 
 # UDP
 socat UDP4-RECV:8500,reuseaddr STDOUT | python3 bin/main --log-level 10 -r rise -e ssrs18 -s rutx --publish raw
 
+# TCP
+socat TCP:192.168.1.124:6001 STDOUT | ./experimental/can-anavs-msg.py
+
+# TCP with Enhanced ANavS Connector (1 kHz binary data)
+socat TCP:192.168.1.124:6001 STDOUT | python3 ./experimental/anavs_connector.py --input-mode stdin -e vessel_name --publish all
+
 # USB
 sudo socat /dev/ttyUSB1,raw,echo=0,b115200 - | ./bin/main --log-level 10 -r rise -e ssrs18 -s sealog --publish all
+
+# Multicast 
+socat UDP4-RECV:60003,ip-add-membership=239.192.0.3:0.0.0.0,reuseaddr STDOUT | ./bin/main  --log-level 10 -r rise -e stena -s ins/1/anavs --publish all
+
+
 ```
 
 ## SOCAT install
