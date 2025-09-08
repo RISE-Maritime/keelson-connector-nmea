@@ -53,7 +53,7 @@ def terminal_inputs():
 
     parser.add_argument(
         "--publish",
-        choices=["all", "raw", "GNGNS", "GPGGA", "GPGSA", "GPVTG", "GPRMC", "GPGSV", "ROT", "GNGST", "GNZDA", "PASHR" ],
+        choices=["all", "raw", "GNGNS", "GPGGA", "GNGGA", "GPGSA", "GNGSA", "GPVTG", "GNVTG", "GPRMC", "GNRMC", "GPGSV", "ROT", "GPROT", "GNROT", "GNGST", "GNZDA", "GNTHS", "PASHR" ],
         type=str,
         required=False,
         action="append",

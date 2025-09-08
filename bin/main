@@ -242,6 +242,7 @@ if __name__ == "__main__":
                         nmea_data = pynmea2.parse(nmea_sentence)
                     except Exception as e:
                         logging.warning(f"Failed to parse {sentence_type} sentence: {e}")
+                        logging.debug(f"Raw sentence: {nmea_sentence}")
                         nmea_data = None
 
                     if nmea_data is not None and getattr(nmea_data, 'timestamp', None) is not None:
@@ -255,14 +256,24 @@ if __name__ == "__main__":
                         payload_location.timestamp.FromDatetime(nmea_msg_timestamp_dt)
 
                         # Latitude
-                        payload_location.latitude = (
-                            -float(nmea_data.latitude) if nmea_data.lat_dir == "S" else float(nmea_data.latitude)
-                        )
+                        if getattr(nmea_data, 'latitude', None) not in (None, ''):
+                            try:
+                                lat_val = float(nmea_data.latitude)
+                                payload_location.latitude = (
+                                    -lat_val if nmea_data.lat_dir == "S" else lat_val
+                                )
+                            except (ValueError, TypeError):
+                                logging.debug(f"Invalid latitude value in {sentence_type}")
 
                         # Longitude
-                        payload_location.longitude = (
-                            -float(nmea_data.longitude) if nmea_data.lon_dir == "W" else float(nmea_data.longitude)
-                        )
+                        if getattr(nmea_data, 'longitude', None) not in (None, ''):
+                            try:
+                                lon_val = float(nmea_data.longitude)
+                                payload_location.longitude = (
+                                    -lon_val if nmea_data.lon_dir == "W" else lon_val
+                                )
+                            except (ValueError, TypeError):
+                                logging.debug(f"Invalid longitude value in {sentence_type}")
 
                         # Altitude
                         if getattr(nmea_data, 'altitude', None) not in (None, ''):
@@ -293,22 +304,27 @@ if __name__ == "__main__":
                             payload_sat_used = TimestampedInt()
                             payload_sat_used.timestamp.FromDatetime(nmea_msg_timestamp_dt)
                             try:
-                                payload_sat_used.value = int(nmea_data.num_sats)
-                                serialized_payload = payload_sat_used.SerializeToString()
-                                envelope = keelson.enclose(serialized_payload)
-                                key_exp_pub_sats_used = keelson.construct_pubsub_key(
-                                    base_path=args.realm,
-                                    entity_id=args.entity_id,
-                                    subject="location_fix_satellites_used",
-                                    source_id=args.source_id + f"/nmea/{sentence_type}",
-                                )
-                                session.put(
-                                    key_expr=key_exp_pub_sats_used,
-                                    payload=envelope,
-                                    priority=zenoh.Priority.INTERACTIVE_HIGH,
-                                    congestion_control=zenoh.CongestionControl.DROP,
-                                )
-                                logging.debug(f"Published Satellites Used on {key_exp_pub_sats_used}")
+                                sat_count = int(nmea_data.num_sats)
+                                # Handle negative satellite counts (some receivers may output -1 to indicate unknown/invalid)
+                                if sat_count >= 0:
+                                    payload_sat_used.value = sat_count
+                                    serialized_payload = payload_sat_used.SerializeToString()
+                                    envelope = keelson.enclose(serialized_payload)
+                                    key_exp_pub_sats_used = keelson.construct_pubsub_key(
+                                        base_path=args.realm,
+                                        entity_id=args.entity_id,
+                                        subject="location_fix_satellites_used",
+                                        source_id=args.source_id + f"/nmea/{sentence_type}",
+                                    )
+                                    session.put(
+                                        key_expr=key_exp_pub_sats_used,
+                                        payload=envelope,
+                                        priority=zenoh.Priority.INTERACTIVE_HIGH,
+                                        congestion_control=zenoh.CongestionControl.DROP,
+                                    )
+                                    logging.debug(f"Published Satellites Used on {key_exp_pub_sats_used}")
+                                else:
+                                    logging.debug(f"Skipping negative satellite count ({sat_count}) in {sentence_type}")
                             except ValueError:
                                 logging.debug(f"Invalid satellites used value in {sentence_type}")
 
@@ -362,6 +378,7 @@ if __name__ == "__main__":
                         nmea_data = pynmea2.parse(nmea_sentence)
                     except Exception as e:
                         logging.warning(f"Failed to parse {sentence_type} sentence: {e}")
+                        logging.debug(f"Raw sentence: {nmea_sentence}")
                         nmea_data = None
 
                     if nmea_data is not None:
@@ -1301,7 +1318,18 @@ if __name__ == "__main__":
                         logging.warning(f"Error processing GPGSV message: {e}")
 
                 else:
-                    logging.warning(f"Unrecognized NMEA sentence: {nmea_sentence}")
+                    # Log detailed information about why this sentence wasn't recognized
+                    sentence_prefix = nmea_sentence[:6] if len(nmea_sentence) >= 6 else nmea_sentence
+                    logging.debug(f"Checking sentence {sentence_prefix} against publish filter: {args.publish}")
+                    
+                    # Check if it's a known sentence type but not in publish filter
+                    known_prefixes = ["$GNGNS", "$GPGGA", "$GNGGA", "$GPGSA", "$GNGSA", "$GPVTG", "$GNVTG", 
+                                     "$GPRMC", "$GNRMC", "$GPROT", "$GNROT", "$GNGST", "$GNZDA", "$GNTHS", "$PASHR", "$GPGSV"]
+                    
+                    if any(nmea_sentence.startswith(prefix) for prefix in known_prefixes):
+                        logging.debug(f"Known NMEA sentence type {sentence_prefix} not in publish filter or failed conditions")
+                    else:
+                        logging.warning(f"Unrecognized NMEA sentence: {nmea_sentence}")
 
             except pynmea2.ChecksumError as e:
                 logging.warning(f"Skipping NMEA line due to invalid checksum: {e}")
