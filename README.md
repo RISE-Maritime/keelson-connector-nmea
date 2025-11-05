@@ -1,222 +1,401 @@
-# Keelson Connector NMEA
+# Keelson NMEA0183 Connector
 
-**Bidirectional** Keelson connector for NMEA devices supporting both input and output operations.
+Bidirectional connectors between NMEA0183 sentences and the Keelson/Zenoh maritime data protocol.
 
-This project provides **bidirectional NMEA connectivity**:
-1. **NMEA → Keelson**: Reads NMEA sentences from serial, UDP, or TCP streams and publishes them on a Zenoh network using the Keelson data model
-2. **Keelson → NMEA**: Subscribes to Keelson messages and converts them back to NMEA format for output via UDP, TCP, Serial, or Multicast
+## Overview
 
-The connector parses various GNSS message types and publishes structured location, navigation, and attitude data, while also being able to regenerate NMEA sentences from Keelson data.
+This repository provides two command-line utilities for converting between NMEA0183 maritime data format and the Keelson protocol on a Zenoh messaging bus:
 
-## Supported NMEA messages
-- GNGNS - Global Navigation Satellite System Fix Data
-- GPGGA - Global Positioning System Fix Data
-- GPGSA - GNSS DOP and Active Satellites
-- GPVTG - Course over ground and ground speed
-- GPRMC - Recommended Minimum Specific GNSS Data
-- GPGSV - GPS Satellites in View
-- ROT - Rate of Turn
-- Raw NMEA sentences
+- **`nmea01832keelson`** - Reads NMEA0183 sentences from STDIN and publishes structured data to Keelson/Zenoh
+- **`keelson2nmea0183`** - Subscribes to Keelson/Zenoh subjects and outputs NMEA0183 sentences to STDOUT
 
-## Code overview
+These tools enable integration between legacy NMEA0183-based systems (GPS receivers, chart plotters, autopilots) and modern Zenoh-based maritime platforms.
 
-### Core Scripts
-#### `bin/main` (Original)
-Legacy NMEA input-only connector. Reads NMEA sentences from `stdin`, parses them with `pynmea2` and publishes selected fields using `keelson` and `zenoh`. Each NMEA type has a dedicated handler that serializes data into the appropriate Keelson protobuf payload such as `LocationFix`, `TimestampedFloat` or `TimestampedInt`.
+## Supported NMEA0183 Sentence Types
 
-#### `bin/main_bidirectional` (New)
-**Bidirectional NMEA connector** that supports both input and output operations:
-- **Input mode**: Processes NMEA from stdin (like the original)
-- **Output mode**: Subscribes to Keelson messages and outputs NMEA via multiple transports
-- **Bidirectional mode**: Handles both input and output simultaneously
+Both connectors support the following 8 essential NMEA sentence types:
 
-### Supporting Modules
-#### `bin/terminal_inputs.py`
-Defines command line arguments including:
-- Original arguments for NMEA input processing 
-- New arguments for NMEA output configuration (UDP, TCP, Serial, Multicast, SOCAT)
-- Output sentence types and generation rates
+| Type | Description | Keelson Subjects |
+|------|-------------|------------------|
+| **GGA** | Global Positioning System Fix Data | `location_fix`, `location_fix_satellites_used`, `location_fix_hdop`, `location_fix_undulation_m` |
+| **RMC** | Recommended Minimum Specific GNSS Data | `location_fix`, `speed_over_ground_knots`, `course_over_ground_deg` |
+| **HDT** | Heading True | `heading_true_north_deg` |
+| **VTG** | Track Made Good and Ground Speed | `course_over_ground_deg`, `speed_over_ground_knots` |
+| **ZDA** | Date and Time | `timestamp` |
+| **GLL** | Geographic Position Latitude/Longitude | `location_fix` |
+| **ROT** | Rate of Turn | `yaw_rate_degps` |
+| **GSA** | GNSS DOP and Active Satellites | `location_fix_hdop`, `location_fix_vdop`, `location_fix_pdop` |
 
-#### `bin/nmea_formatter.py`
-Converts Keelson/Zenoh messages back to NMEA format. Supports generating:
-- GGA (Global Positioning System Fix Data)
-- RMC (Recommended Minimum Course)  
-- VTG (Track Made Good and Ground Speed)
-- ROT (Rate of Turn)
-- HDT (Heading True)
-- PASHR (Proprietary pitch/roll/heading)
-- ZDA (Date and Time)
+## Installation
 
-#### `bin/nmea_output_adapter.py`
-Handles NMEA sentence output via various transport methods:
-- UDP unicast/broadcast
-- TCP client connections
-- Serial ports
-- UDP multicast
-- SOCAT processes for complex configurations
+### Prerequisites
 
-#### `bin/keelson_to_nmea.py`
-Zenoh subscriber that listens for Keelson messages and converts them to NMEA sentences using the formatter and output adapters.
+- Python 3.8 or later
+- Access to a Zenoh router (optional for peer-to-peer mode)
 
-### Docker setup
-The `Dockerfile` builds a container containing the connector. `docker-compose.nmea.yml` provides examples for running the connector with SOCAT using either an UDP or USB source.
+### Install Dependencies
 
-### Experimental notebooks
-The `experimental` folder contains Jupyter notebooks and recorded JSON examples that demonstrate how to work with the produced data.
-
-## Quick Start Examples
-
-### Original NMEA Input (Legacy)
 ```bash
-# UDP input
-socat UDP4-RECV:8500,reuseaddr STDOUT | python3 bin/main --log-level 10 -r rise -e vessel1 -s gps/rutx --publish all
-
-# USB/Serial input  
-sudo socat /dev/ttyUSB1,raw,echo=0,b115200 - | python3 bin/main --log-level 10 -r rise -e vessel1 -s gps/sealog --publish all
-
-# Multicast input
-socat UDP4-RECV:60003,ip-add-membership=239.192.0.3:0.0.0.0,reuseaddr STDOUT | python3 bin/main --log-level 10 -r rise -e vessel1 -s ins/anavs --publish all
+pip install -r requirements.txt
 ```
 
-### Bidirectional NMEA Connector (New)
+The key dependencies are:
+- `eclipse-zenoh` - Zenoh messaging library
+- `keelson` - Keelson protocol implementation
+- `pynmea2` - NMEA0183 parsing and generation
+- `skarv` - In-memory data vault for state management
 
-#### Input Only (Same as legacy)
+## Usage
+
+### NMEA → Keelson (`nmea01832keelson`)
+
+Reads NMEA0183 sentences from standard input and publishes to Keelson/Zenoh.
+
+#### Basic Usage
+
 ```bash
-# Process NMEA from UDP input
-socat UDP4-RECV:8500,reuseaddr STDOUT | python3 bin/main_bidirectional --log-level 10 -r rise -e vessel1 -s gps/1 --publish all
+# Read from GPS device
+cat /dev/ttyUSB0 | nmea01832keelson -r "vessel/sv_colibri" -e "sensors" -s "gps/primary"
+
+# Read from file
+nmea01832keelson -r "vessel/sv_colibri" -e "sensors" -s "gps/primary" < nmea_log.txt
+
+# Pipe from another program
+gpsd_client | nmea01832keelson -r "vessel/sv_colibri" -e "sensors" -s "gps/primary"
 ```
 
-#### Output Only
-```bash  
-# Generate NMEA from Keelson messages and output via UDP
-python3 bin/main_bidirectional --log-level 10 -r rise -e vessel1 --output-only \
-  --output-udp 192.168.1.100:8501 \
-  --nmea-sentences GGA,RMC,VTG,HDT \
-  --nmea-rate-hz 2.0
+#### Command-Line Options
 
-# Output to multiple destinations
-python3 bin/main_bidirectional --log-level 10 -r rise -e vessel1 --output-only \
-  --output-udp 192.168.1.100:8501 \
-  --output-tcp 192.168.1.200:8502 \
-  --output-serial /dev/ttyUSB0:115200 \
-  --nmea-sentences GGA,RMC,VTG
+```
+Required Arguments:
+  -r, --realm REALM              Keelson realm (e.g., "vessel/sv_colibri")
+  -e, --entity-id ENTITY_ID      Entity identifier (e.g., "sensors")
+  -s, --source-id SOURCE_ID      Source identifier (e.g., "gps/primary")
 
-# Output via multicast
-python3 bin/main_bidirectional --log-level 10 -r rise -e vessel1 --output-only \
-  --output-multicast 239.192.0.10:8503 \
-  --nmea-sentences GGA,RMC,PASHR,HDT
+Optional Arguments:
+  --log-level LEVEL              Log level: 10=DEBUG, 20=INFO, 30=WARNING, 40=ERROR (default: 20)
+  --mode {peer,client}           Zenoh session mode (default: peer)
+  --connect ENDPOINT             Zenoh router endpoint (can be used multiple times)
+  --publish-raw                  Also publish raw NMEA to 'raw' subject
 ```
 
-#### Bidirectional (Input + Output)
+#### Examples
+
+**Connect to a Zenoh router:**
 ```bash
-# Read NMEA from UDP, publish to Keelson, and output regenerated NMEA via different transport
-socat UDP4-RECV:8500,reuseaddr STDOUT | python3 bin/main_bidirectional \
-  --log-level 10 -r rise -e vessel1 -s gps/input \
-  --publish all \
-  --output-udp 192.168.1.100:8501 \
-  --nmea-sentences GGA,RMC,VTG
-
-# Bridge between serial and network
-sudo socat /dev/ttyUSB1,raw,echo=0,b115200 - | python3 bin/main_bidirectional \
-  --log-level 10 -r rise -e vessel1 -s gps/serial \
-  --publish all \
-  --output-udp 192.168.1.255:8501 \
-  --nmea-sentences GGA,RMC,VTG,ROT
+cat /dev/ttyUSB0 | nmea01832keelson \
+  -r "vessel/sv_colibri" \
+  -e "sensors" \
+  -s "gps/primary" \
+  --mode client \
+  --connect "tcp/192.168.1.100:7447"
 ```
 
-#### Advanced SOCAT Integration  
+**Enable debug logging:**
 ```bash
-# Use SOCAT for complex output routing
-python3 bin/main_bidirectional --log-level 10 -r rise -e vessel1 --output-only \
-  --output-socat "STDOUT | socat - UDP4-SENDTO:192.168.1.100:8501" \
-  --nmea-sentences GGA,RMC,VTG
-
-# Multiple SOCAT outputs
-python3 bin/main_bidirectional --log-level 10 -r rise -e vessel1 --output-only \
-  --output-socat "STDOUT | socat - UDP4-SENDTO:192.168.1.100:8501" \
-  --output-socat "STDOUT | socat - /dev/ttyUSB2,raw,echo=0,b115200" \
-  --nmea-sentences GGA,RMC,VTG,HDT,PASHR
+cat /dev/ttyUSB0 | nmea01832keelson \
+  -r "vessel/sv_colibri" \
+  -e "sensors" \
+  -s "gps/primary" \
+  --log-level 10
 ```
 
-## Requirements and Installation
-
-### System Dependencies
-```sh
-# Install SOCAT for advanced I/O operations
-sudo apt install socat
-
-# Install netcat for testing (optional)
-sudo apt install netcat-openbsd
-```
-
-### Python Dependencies
-The connector requires Python 3.8+ and the following packages (automatically installed):
-- `keelson` - Keelson protobuf messages and Zenoh integration
-- `pynmea2` - NMEA sentence parsing
-- `pyserial` - Serial port communication
-- `pytz` - Timezone handling
-- `zenoh` - Zenoh networking (installed with keelson)
-
-## Testing the Implementation
-
-### Quick Test
-Run the test script to verify all components work:
+**Also publish raw NMEA sentences:**
 ```bash
-python3 test_bidirectional.py
+cat /dev/ttyUSB0 | nmea01832keelson \
+  -r "vessel/sv_colibri" \
+  -e "sensors" \
+  -s "gps/primary" \
+  --publish-raw
 ```
+
+### Keelson → NMEA (`keelson2nmea0183`)
+
+Subscribes to Keelson/Zenoh subjects and outputs NMEA0183 sentences to standard output.
+
+#### Basic Usage
+
+```bash
+# Output to terminal
+keelson2nmea0183 -r "vessel/sv_colibri" -e "sensors"
+
+# Output to serial device
+keelson2nmea0183 -r "vessel/sv_colibri" -e "sensors" > /dev/ttyUSB1
+
+# Output to file
+keelson2nmea0183 -r "vessel/sv_colibri" -e "sensors" > nmea_output.log
+
+# Pipe to another program
+keelson2nmea0183 -r "vessel/sv_colibri" -e "sensors" | opencpn_input
+```
+
+#### Command-Line Options
+
+```
+Required Arguments:
+  -r, --realm REALM              Keelson realm (e.g., "vessel/sv_colibri")
+  -e, --entity-id ENTITY_ID      Entity identifier (e.g., "sensors")
+
+Optional Arguments:
+  --log-level LEVEL              Log level: 10=DEBUG, 20=INFO, 30=WARNING, 40=ERROR (default: 20)
+  --mode {peer,client}           Zenoh session mode (default: peer)
+  --connect ENDPOINT             Zenoh router endpoint (can be used multiple times)
+  --talker-id ID                 NMEA talker ID (default: "GP")
+  --source_id_SUBJECT PATTERN    Source pattern for specific subject (default: "**")
+```
+
+#### Examples
+
+**Change NMEA talker ID:**
+```bash
+keelson2nmea0183 \
+  -r "vessel/sv_colibri" \
+  -e "sensors" \
+  --talker-id "GN"
+```
+
+**Connect to specific Zenoh router:**
+```bash
+keelson2nmea0183 \
+  -r "vessel/sv_colibri" \
+  -e "sensors" \
+  --mode client \
+  --connect "tcp/192.168.1.100:7447"
+```
+
+**Filter by specific GPS source:**
+```bash
+keelson2nmea0183 \
+  -r "vessel/sv_colibri" \
+  -e "sensors" \
+  --source_id_location_fix "gps/primary" \
+  --source_id_speed_over_ground_knots "gps/primary"
+```
+
+**Subscribe to multiple sources using wildcards:**
+```bash
+keelson2nmea0183 \
+  -r "vessel/sv_colibri" \
+  -e "sensors" \
+  --source_id_location_fix "gps/**"
+```
+
+## Keelson Subject Mapping
+
+### NMEA → Keelson Mappings
+
+#### GGA (Position Fix)
+```
+NMEA Field                → Keelson Subject (Type)
+---------------------------------------------------
+Latitude, Longitude       → location_fix (LocationFix)
+Altitude                  → location_fix.altitude (LocationFix)
+Number of satellites      → location_fix_satellites_used (TimestampedInt)
+HDOP                      → location_fix_hdop (TimestampedFloat)
+Geoid separation          → location_fix_undulation_m (TimestampedFloat)
+```
+
+#### RMC (Recommended Minimum)
+```
+NMEA Field                → Keelson Subject (Type)
+---------------------------------------------------
+Latitude, Longitude       → location_fix (LocationFix)
+Speed over ground         → speed_over_ground_knots (TimestampedFloat)
+True course               → course_over_ground_deg (TimestampedFloat)
+```
+
+#### HDT (Heading True)
+```
+NMEA Field                → Keelson Subject (Type)
+---------------------------------------------------
+True heading              → heading_true_north_deg (TimestampedFloat)
+```
+
+#### VTG (Track Made Good)
+```
+NMEA Field                → Keelson Subject (Type)
+---------------------------------------------------
+True track                → course_over_ground_deg (TimestampedFloat)
+Speed in knots            → speed_over_ground_knots (TimestampedFloat)
+```
+
+#### ZDA (Time and Date)
+```
+NMEA Field                → Keelson Subject (Type)
+---------------------------------------------------
+UTC date/time             → timestamp (TimestampedTimestamp)
+```
+
+#### GLL (Geographic Position)
+```
+NMEA Field                → Keelson Subject (Type)
+---------------------------------------------------
+Latitude, Longitude       → location_fix (LocationFix)
+```
+
+#### ROT (Rate of Turn)
+```
+NMEA Field                → Keelson Subject (Type)
+---------------------------------------------------
+Rate of turn (deg/min)    → yaw_rate_degps (TimestampedFloat, converted to deg/sec)
+```
+
+#### GSA (DOP and Active Satellites)
+```
+NMEA Field                → Keelson Subject (Type)
+---------------------------------------------------
+HDOP                      → location_fix_hdop (TimestampedFloat)
+VDOP                      → location_fix_vdop (TimestampedFloat)
+PDOP                      → location_fix_pdop (TimestampedFloat)
+```
+
+### Unit Conversions
+
+The connectors automatically handle unit conversions:
+
+- **ROT**: NMEA uses degrees/minute, Keelson uses degrees/second
+  - NMEA → Keelson: divide by 60
+  - Keelson → NMEA: multiply by 60
+
+- **VTG**: Converts knots to km/h for NMEA output
+  - 1 knot = 1.852 km/h
+
+## Architecture
+
+### nmea01832keelson Architecture
+
+```
+STDIN → Parse (pynmea2) → Handler Functions → Keelson Envelope → Zenoh Publish
+```
+
+- **Functional design** with handler registry pattern
+- **Lazy publisher caching** to minimize Zenoh overhead
+- **Timestamped messages** using NMEA timestamps when available
+- **Defensive parsing** with graceful error handling
+
+### keelson2nmea0183 Architecture
+
+```
+Zenoh Subscribe → skarv Vault → Event Triggers → Generate NMEA (pynmea2) → STDOUT
+```
+
+- **Event-driven generation** using `@skarv.subscribe()` decorators
+- **State aggregation** with skarv in-memory vault
+- **Automatic checksum** calculation via pynmea2
+- **Wildcard subscriptions** for flexible source matching
+
+## Development
+
+### Project Structure
+
+```
+keelson-connector-nmea/
+├── bin/
+│   ├── nmea01832keelson       # NMEA → Keelson script
+│   ├── keelson2nmea0183        # Keelson → NMEA script
+│   └── utils.py                # Shared helper functions
+├── legacy/                     # Previous implementation (deprecated)
+├── requirements.txt            # Python dependencies
+├── requirements_dev.txt        # Development dependencies
+└── README.md                   # This file
+```
+
+### Key Design Patterns
+
+Following the [keelson-connector-ais](https://github.com/RISE-Maritime/keelson-connector-ais) reference architecture:
+
+1. **Functional over OOP** - Simple functions with handler registries
+2. **Lazy resource creation** - Publishers created on first use
+3. **Skarv for state** - In-memory vault for data aggregation
+4. **Decorator-based subscriptions** - Clean event-driven patterns
+5. **STDOUT discipline** - Always flush after write
+
+### Adding New NMEA Sentence Types
+
+To add support for additional NMEA sentence types:
+
+#### In nmea01832keelson:
+
+1. Create a handler function in [bin/nmea01832keelson](bin/nmea01832keelson):
+   ```python
+   def handle_xxx(msg, session, args):
+       """Handle XXX - Description."""
+       # Extract fields from msg
+       # Publish to appropriate Keelson subjects
+   ```
+
+2. Register the handler:
+   ```python
+   MESSAGE_HANDLERS = {
+       # ... existing handlers
+       "XXX": handle_xxx,
+   }
+   ```
+
+#### In keelson2nmea0183:
+
+1. Add required subjects to `SUBJECTS` list in [bin/keelson2nmea0183](bin/keelson2nmea0183)
+
+2. Create a subscriber function:
+   ```python
+   @skarv.subscribe("your_subject")
+   def on_your_subject(sample: skarv.Sample):
+       """Generate XXX sentence when subject is updated."""
+       # Parse sample
+       # Aggregate data from skarv
+       # Generate NMEA sentence using pynmea2
+       # Output with output_nmea()
+   ```
+
+## Testing
 
 ### Manual Testing
 
-#### Test NMEA Output
-1. Start the connector in output mode:
+**Round-trip test:**
 ```bash
-python3 bin/main_bidirectional --log-level 10 -r rise -e test_vessel --output-only \
-  --output-udp 127.0.0.1:8501 --nmea-sentences GGA,RMC,VTG --nmea-rate-hz 0.5
+# Terminal 1: Generate NMEA from Keelson
+keelson2nmea0183 -r "test/vessel" -e "sensors" > /tmp/nmea_output
+
+# Terminal 2: Publish test data to Keelson
+# (use keelson tools or write test script)
+
+# Terminal 3: Feed NMEA back to Keelson
+cat /tmp/nmea_output | nmea01832keelson -r "test/roundtrip" -e "sensors" -s "test"
+
+# Verify data integrity
 ```
 
-2. In another terminal, listen for NMEA output:
+**Test with sample NMEA file:**
 ```bash
-nc -lu 8501
+cat << 'EOF' > test.nmea
+$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47
+$GPGSA,A,3,04,05,,09,12,,,24,,,,,2.5,1.3,2.1*39
+$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A
+EOF
+
+nmea01832keelson -r "test/vessel" -e "sensors" -s "gps" < test.nmea
 ```
 
-3. Publish test Keelson messages (requires Zenoh router and keelson tools)
+## References
 
-#### Test NMEA Input  
-1. Start the connector in input mode:
-```bash
-python3 bin/main_bidirectional --log-level 10 -r rise -e test_vessel -s test/gps --publish all
-```
+- **Keelson Protocol**: [https://rise-maritime.github.io/keelson/](https://rise-maritime.github.io/keelson/)
+  - [Protocol Specification](https://rise-maritime.github.io/keelson/protocol-specification/)
+  - [Subjects and Types](https://rise-maritime.github.io/keelson/subjects-and-types/)
+- **NMEA0183 Standard**: Maritime navigation data communication protocol
+- **Zenoh**: [https://zenoh.io/](https://zenoh.io/) - Zero Overhead Network Protocol
+- **pynmea2**: [https://github.com/Knio/pynmea2](https://github.com/Knio/pynmea2)
 
-2. Send test NMEA data:
-```bash
-echo '$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47' | python3 bin/main_bidirectional --log-level 10 -r rise -e test_vessel -s test/gps --publish all
-```
+## License
 
-Setup for development environment on your own computer:
+[Include your license information here]
 
-1. Install [Docker Desktop for Windows](https://docs.docker.com/desktop/install/windows-install/)
-   - Docker desktop provides an UI for monitoring and controlling docker containers
-   - If you want to learn more about docker and its building blocks checkout [Docker quick hands-on guide](https://docs.docker.com/guides/get-started/)
-2. Start up of **Zenoh router** either on your computer or another machine within your local network
+## Contributing
 
-   ```bash
-   # Navigate to folder containing docker-compose.zenoh-router.yml
+Contributions are welcome! Please follow the existing code style and patterns established in the reference implementation.
 
-   # Start router with log output
-  docker-compose -f docker-compose.zenoh-router.yml up
+## Support
 
-   # If no obvious errors, stop container with "ctrl-c"
-
-   # Start container and let it run in the background/detached (append -d)
-  docker-compose -f docker-compose.zenoh-router.yml up -d
-   ```
-
-  [docker-compose.zenoh-router.yml](docker-compose.zenoh-router.yml)
-
-3. Now the Zenoh router should be running and available on localhost:8000. This can be tested with the [Zenoh Rest API](https://zenoh.io/docs/apis/rest/) or by continuing to the next step using the Python API
-4. Set up a python virtual environment (`python >= 3.11`)
-   1. Install packages with `pip install -r requirements.txt`
-5. Explore example scripts in the [experimental folder](./experimental/)
-   1. Samples are based on the [Zenoh Python API](https://zenoh-python.readthedocs.io/en/0.10.1-rc/#quick-start-examples)
-
-[Zenoh CLI for debugging and problem solving](https://github.com/RISE-Maritime/zenoh-cli)
+For issues and questions:
+- Open an issue on GitHub
+- Refer to the Keelson documentation
+- Check the keelson-connector-ais reference implementation

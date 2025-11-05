@@ -1,5 +1,4 @@
-environs==14.1.1
-keelson==0.4.4rc16
-pynmea2
-pytz
-pyserial
+keelson==0.4.4rc20
+pynmea2==1.19.0
+skarv==0.2.0
+eclipse-zenoh==1.6.2

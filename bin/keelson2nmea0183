@@ -1,0 +1,473 @@
+#!/usr/bin/env python3
+
+"""
+Command line utility for subscribing to Keelson/Zenoh and outputting NMEA0183 to STDOUT.
+
+Subscribes to specified Keelson subjects on the Zenoh bus, aggregates the data using
+skarv, and generates NMEA0183 sentences written to standard output.
+
+Generated NMEA sentence types:
+- GGA: Global Positioning System Fix Data
+- RMC: Recommended Minimum Specific GNSS Data
+- HDT: Heading True
+- VTG: Track Made Good and Ground Speed
+- ZDA: Date and Time
+- GLL: Geographic Position Latitude/Longitude
+- ROT: Rate of Turn
+- GSA: GNSS DOP and Active Satellites
+"""
+
+import sys
+import json
+import time
+import logging
+import argparse
+from datetime import datetime, timezone
+from typing import Optional
+
+import zenoh
+import pynmea2
+import skarv
+import skarv.utilities
+import keelson
+from keelson.payloads.Primitives_pb2 import (
+    TimestampedFloat,
+    TimestampedInt,
+    TimestampedTimestamp,
+)
+from keelson.payloads.foxglove.LocationFix_pb2 import LocationFix
+
+from utils import mirror, get_first
+
+# Subjects to subscribe to
+SUBJECTS = [
+    "location_fix",
+    "speed_over_ground_knots",
+    "course_over_ground_deg",
+    "heading_true_north_deg",
+    "yaw_rate_degps",
+    "location_fix_hdop",
+    "location_fix_vdop",
+    "location_fix_pdop",
+    "location_fix_satellites_used",
+    "location_fix_undulation_m",
+]
+
+ARGS = None
+logger = logging.getLogger("keelson2nmea0183")
+
+
+def parse_location_fix(sample) -> Optional[LocationFix]:
+    """Parse a LocationFix from a skarv sample."""
+    if not sample:
+        return None
+    try:
+        _, _, payload = keelson.uncover(sample.payload)
+        msg = LocationFix()
+        msg.ParseFromString(payload)
+        return msg
+    except Exception as e:
+        logger.debug(f"Failed to parse LocationFix: {e}")
+        return None
+
+
+def parse_timestamped_float(sample) -> Optional[float]:
+    """Parse a TimestampedFloat from a skarv sample."""
+    if not sample:
+        return None
+    try:
+        _, _, payload = keelson.uncover(sample.payload)
+        msg = TimestampedFloat()
+        msg.ParseFromString(payload)
+        return msg.value
+    except Exception as e:
+        logger.debug(f"Failed to parse TimestampedFloat: {e}")
+        return None
+
+
+def parse_timestamped_int(sample) -> Optional[int]:
+    """Parse a TimestampedInt from a skarv sample."""
+    if not sample:
+        return None
+    try:
+        _, _, payload = keelson.uncover(sample.payload)
+        msg = TimestampedInt()
+        msg.ParseFromString(payload)
+        return msg.value
+    except Exception as e:
+        logger.debug(f"Failed to parse TimestampedInt: {e}")
+        return None
+
+
+def output_nmea(sentence: str):
+    """Output an NMEA sentence to STDOUT with proper flushing."""
+    sys.stdout.write(sentence + "\n")
+    sys.stdout.flush()
+    logger.debug(f"Output: {sentence}")
+
+
+def format_lat_lon(latitude: float, longitude: float) -> tuple:
+    """
+    Format latitude and longitude for NMEA sentences.
+
+    Returns:
+        Tuple of (lat_str, lat_dir, lon_str, lon_dir)
+    """
+    # Latitude
+    lat_deg = abs(int(latitude))
+    lat_min = (abs(latitude) - lat_deg) * 60
+    lat_str = f"{lat_deg:02d}{lat_min:07.4f}"
+    lat_dir = "N" if latitude >= 0 else "S"
+
+    # Longitude
+    lon_deg = abs(int(longitude))
+    lon_min = (abs(longitude) - lon_deg) * 60
+    lon_str = f"{lon_deg:03d}{lon_min:07.4f}"
+    lon_dir = "E" if longitude >= 0 else "W"
+
+    return lat_str, lat_dir, lon_str, lon_dir
+
+
+@skarv.subscribe("location_fix")
+def on_location_fix(sample: skarv.Sample):
+    """
+    Generate NMEA sentences when location fix is updated.
+
+    Generates: GGA, RMC, GLL (depending on available data)
+    """
+    location = parse_location_fix(sample)
+    if not location:
+        return
+
+    # Get additional data from skarv
+    speed_sample = get_first(skarv.get("speed_over_ground_knots"))
+    course_sample = get_first(skarv.get("course_over_ground_deg"))
+    hdop_sample = get_first(skarv.get("location_fix_hdop"))
+    sats_sample = get_first(skarv.get("location_fix_satellites_used"))
+    undulation_sample = get_first(skarv.get("location_fix_undulation_m"))
+
+    speed = parse_timestamped_float(speed_sample)
+    course = parse_timestamped_float(course_sample)
+    hdop = parse_timestamped_float(hdop_sample)
+    num_sats = parse_timestamped_int(sats_sample)
+    undulation = parse_timestamped_float(undulation_sample)
+
+    # Extract timestamp
+    utc_time = location.timestamp.ToDatetime() if location.timestamp.seconds else datetime.now(timezone.utc)
+
+    # Format position
+    lat_str, lat_dir, lon_str, lon_dir = format_lat_lon(location.latitude, location.longitude)
+
+    # Generate GGA sentence
+    try:
+        gga = pynmea2.GGA(
+            ARGS.talker_id, "GGA",
+            (
+                utc_time.strftime("%H%M%S.%f")[:-4],  # Time (HHMMSS.ss)
+                lat_str,
+                lat_dir,
+                lon_str,
+                lon_dir,
+                "1",  # Fix quality (1 = GPS fix)
+                f"{num_sats:02d}" if num_sats else "00",
+                f"{hdop:.1f}" if hdop else "",
+                f"{location.altitude:.2f}" if location.HasField("altitude") else "",
+                "M",  # Altitude units
+                f"{undulation:.1f}" if undulation else "",
+                "M",  # Undulation units
+                "",   # Age of differential corrections
+                "0000"  # Differential reference station ID
+            )
+        )
+        output_nmea(str(gga))
+    except Exception as e:
+        logger.error(f"Failed to generate GGA: {e}")
+
+    # Generate RMC sentence if we have speed and course
+    if speed is not None and course is not None:
+        try:
+            rmc = pynmea2.RMC(
+                ARGS.talker_id, "RMC",
+                (
+                    utc_time.strftime("%H%M%S.%f")[:-4],  # Time
+                    "A",  # Status (A = active/valid)
+                    lat_str,
+                    lat_dir,
+                    lon_str,
+                lon_dir,
+                    f"{speed:.1f}",
+                    f"{course:.1f}",
+                    utc_time.strftime("%d%m%y"),  # Date (DDMMYY)
+                    "",  # Magnetic variation
+                    "",  # Variation direction
+                    "A"  # Mode indicator (A = autonomous)
+                )
+            )
+            output_nmea(str(rmc))
+        except Exception as e:
+            logger.error(f"Failed to generate RMC: {e}")
+
+    # Generate GLL sentence
+    try:
+        gll = pynmea2.GLL(
+            ARGS.talker_id, "GLL",
+            (
+                lat_str,
+                lat_dir,
+                lon_str,
+                lon_dir,
+                utc_time.strftime("%H%M%S.%f")[:-4],
+                "A",  # Status (A = valid)
+                "A"   # Mode indicator
+            )
+        )
+        output_nmea(str(gll))
+    except Exception as e:
+        logger.error(f"Failed to generate GLL: {e}")
+
+
+@skarv.subscribe("speed_over_ground_knots")
+def on_speed(sample: skarv.Sample):
+    """Generate VTG sentence when speed is updated."""
+    speed = parse_timestamped_float(sample)
+    if speed is None:
+        return
+
+    # Get course from skarv
+    course_sample = get_first(skarv.get("course_over_ground_deg"))
+    course = parse_timestamped_float(course_sample)
+
+    if course is None:
+        return
+
+    try:
+        vtg = pynmea2.VTG(
+            ARGS.talker_id, "VTG",
+            (
+                f"{course:.1f}",  # True track
+                "T",
+                "",  # Magnetic track
+                "M",
+                f"{speed:.1f}",  # Speed in knots
+                "N",
+                f"{speed * 1.852:.1f}",  # Speed in km/h
+                "K",
+                "A"  # Mode indicator
+            )
+        )
+        output_nmea(str(vtg))
+    except Exception as e:
+        logger.error(f"Failed to generate VTG: {e}")
+
+
+@skarv.subscribe("heading_true_north_deg")
+def on_heading(sample: skarv.Sample):
+    """Generate HDT sentence when heading is updated."""
+    heading = parse_timestamped_float(sample)
+    if heading is None:
+        return
+
+    try:
+        hdt = pynmea2.HDT(
+            ARGS.talker_id, "HDT",
+            (
+                f"{heading:.1f}",
+                "T"
+            )
+        )
+        output_nmea(str(hdt))
+    except Exception as e:
+        logger.error(f"Failed to generate HDT: {e}")
+
+
+@skarv.subscribe("yaw_rate_degps")
+def on_yaw_rate(sample: skarv.Sample):
+    """
+    Generate ROT sentence when yaw rate is updated.
+
+    Note: Keelson uses degrees per second, NMEA ROT uses degrees per minute.
+    """
+    yaw_rate_degps = parse_timestamped_float(sample)
+    if yaw_rate_degps is None:
+        return
+
+    # Convert from degrees per second to degrees per minute
+    yaw_rate_degpm = yaw_rate_degps * 60.0
+
+    try:
+        rot = pynmea2.ROT(
+            ARGS.talker_id, "ROT",
+            (
+                f"{yaw_rate_degpm:.1f}",
+                "A"  # Status (A = valid)
+            )
+        )
+        output_nmea(str(rot))
+    except Exception as e:
+        logger.error(f"Failed to generate ROT: {e}")
+
+
+@skarv.subscribe("location_fix_hdop")
+def on_dop_update(sample: skarv.Sample):
+    """Generate GSA sentence when DOP values are updated."""
+    hdop = parse_timestamped_float(sample)
+
+    # Get VDOP and PDOP from skarv
+    vdop_sample = get_first(skarv.get("location_fix_vdop"))
+    pdop_sample = get_first(skarv.get("location_fix_pdop"))
+
+    vdop = parse_timestamped_float(vdop_sample)
+    pdop = parse_timestamped_float(pdop_sample)
+
+    # Need at least one DOP value to generate GSA
+    if hdop is None and vdop is None and pdop is None:
+        return
+
+    try:
+        # GSA sentence with basic data
+        # PRN list would require tracking individual satellites (complex)
+        gsa = pynmea2.GSA(
+            ARGS.talker_id, "GSA",
+            (
+                "A",  # Mode (A = automatic)
+                "3",  # Fix type (3 = 3D fix)
+                "", "", "", "", "", "", "", "", "", "", "", "",  # PRN numbers (empty)
+                f"{pdop:.1f}" if pdop else "",
+                f"{hdop:.1f}" if hdop else "",
+                f"{vdop:.1f}" if vdop else ""
+            )
+        )
+        output_nmea(str(gsa))
+    except Exception as e:
+        logger.error(f"Failed to generate GSA: {e}")
+
+
+@skarv.utilities.call_every(1.0)
+def generate_zda():
+    """Generate ZDA sentence periodically (once per second)."""
+    try:
+        now = datetime.now(timezone.utc)
+        zda = pynmea2.ZDA(
+            ARGS.talker_id, "ZDA",
+            (
+                now.strftime("%H%M%S.%f")[:-4],  # Time
+                f"{now.day:02d}",
+                f"{now.month:02d}",
+                f"{now.year:04d}",
+                "00",  # Local zone hours
+                "00"   # Local zone minutes
+            )
+        )
+        output_nmea(str(zda))
+    except Exception as e:
+        logger.error(f"Failed to generate ZDA: {e}")
+
+
+def main():
+    global ARGS
+
+    parser = argparse.ArgumentParser(
+        prog="keelson2nmea0183",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description="Subscribe to Keelson/Zenoh and output NMEA0183 to STDOUT"
+    )
+
+    # Logging
+    parser.add_argument(
+        "--log-level",
+        type=int,
+        default=logging.INFO,
+        help="Log level (10=DEBUG, 20=INFO, 30=WARNING, 40=ERROR)"
+    )
+
+    # Zenoh configuration
+    parser.add_argument(
+        "--mode", "-m",
+        choices=["peer", "client"],
+        help="Zenoh session mode"
+    )
+    parser.add_argument(
+        "--connect",
+        action="append",
+        help="Zenoh router endpoint to connect to (can be specified multiple times)"
+    )
+
+    # Keelson identifiers (required)
+    parser.add_argument(
+        "-r", "--realm",
+        type=str,
+        required=True,
+        help="Keelson realm (base path)"
+    )
+    parser.add_argument(
+        "-e", "--entity-id",
+        type=str,
+        required=True,
+        help="Entity identifier"
+    )
+
+    # NMEA configuration
+    parser.add_argument(
+        "--talker-id",
+        type=str,
+        default="GP",
+        help="NMEA talker ID (e.g., GP, GN, GL)"
+    )
+
+    # Per-subject source ID patterns (wildcard support)
+    for subject in SUBJECTS:
+        parser.add_argument(
+            f"--source_id_{subject}",
+            type=str,
+            default="**",
+            help=f"Source ID pattern for {subject} (supports wildcards)"
+        )
+
+    ARGS = parser.parse_args()
+
+    # Setup logging
+    logging.basicConfig(
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        level=ARGS.log_level
+    )
+    logging.captureWarnings(True)
+
+    # Configure Zenoh
+    conf = zenoh.Config()
+    if ARGS.mode is not None:
+        conf.insert_json5("mode", json.dumps(ARGS.mode))
+    if ARGS.connect is not None:
+        conf.insert_json5("connect/endpoints", json.dumps(ARGS.connect))
+
+    # Initialize Zenoh logging
+    zenoh.init_log_from_env_or(logging.getLevelName(ARGS.log_level))
+
+    logger.info("Opening Zenoh session...")
+    with zenoh.open(conf) as session:
+        logger.info(f"Connected to realm: {ARGS.realm}, entity: {ARGS.entity_id}")
+        logger.info(f"NMEA talker ID: {ARGS.talker_id}")
+
+        # Mirror all subjects to skarv
+        for subject in SUBJECTS:
+            source_id = getattr(ARGS, f"source_id_{subject}")
+            zenoh_key = keelson.construct_pubsub_key(
+                ARGS.realm,
+                ARGS.entity_id,
+                subject,
+                source_id
+            )
+            mirror(session, zenoh_key, subject)
+            logger.info(f"Subscribed to: {zenoh_key}")
+
+        logger.info("Outputting NMEA to STDOUT...")
+
+        # Keep running until interrupted
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            logger.info("Interrupted by user")
+
+
+if __name__ == "__main__":
+    main()
