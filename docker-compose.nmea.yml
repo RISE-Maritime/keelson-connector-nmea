@@ -1,23 +1,73 @@
 services:
 
-# # UDP SOCAT 
-#   nmea-udp:
-#     build: .
-#     # image: ghcr.io/rise-maritime/keelson-connector-nmea:latest
-#     container_name: keelson-connector-nmea
-#     restart: unless-stopped
-#     network_mode: "host"
-#     command: ["socat UDP4-RECV:8500,reuseaddr STDOUT | main --log-level 10 -r rise -e ssrs18 -s rutx --publish raw"]
-    
+  # Legacy NMEA Input Examples
+  # UDP Input (Original)
+  # nmea-udp-legacy:
+  #   build: .
+  #   # image: ghcr.io/rise-maritime/keelson-connector-nmea:latest
+  #   container_name: keelson-connector-nmea-udp-legacy
+  #   restart: unless-stopped
+  #   network_mode: "host"
+  #   command: ["socat UDP4-RECV:8500,reuseaddr STDOUT | main --log-level 10 -r rise -e vessel1 -s gps/udp --publish all"]
 
-# USB SOCAT 
-  nmea-usb:
+  # USB Input (Original) 
+  # nmea-usb-legacy:
+  #   build: .
+  #   # image: ghcr.io/rise-maritime/keelson-connector-nmea:latest
+  #   container_name: keelson-connector-nmea-usb-legacy
+  #   restart: unless-stopped
+  #   network_mode: "host"
+  #   privileged: true
+  #   devices:
+  #     - /dev/ttyUSB1:/dev/ttyUSB1
+  #   command: ["socat /dev/ttyUSB1,raw,echo=0,b115200 STDOUT | main --log-level 10 -r rise -e vessel1 -s gps/serial --publish all"]
+
+  # Bidirectional NMEA Connector Examples
+
+  # Input Only (UDP to Keelson)
+  nmea-input-udp:
     build: .
     # image: ghcr.io/rise-maritime/keelson-connector-nmea:latest
-    container_name: keelson-connector-nmea-usb
+    container_name: keelson-connector-nmea-input-udp
+    restart: unless-stopped
+    network_mode: "host"
+    command: ["socat UDP4-RECV:8500,reuseaddr STDOUT | main_bidirectional --log-level 10 -r rise -e vessel1 -s gps/udp --publish all"]
+
+  # Output Only (Keelson to UDP NMEA)  
+  nmea-output-udp:
+    build: .
+    # image: ghcr.io/rise-maritime/keelson-connector-nmea:latest
+    container_name: keelson-connector-nmea-output-udp
+    restart: unless-stopped
+    network_mode: "host"
+    command: ["main_bidirectional", "--log-level", "10", "-r", "rise", "-e", "vessel1", "--output-only", "--output-udp", "192.168.1.100:8501", "--nmea-sentences", "GGA,RMC,VTG,HDT", "--nmea-rate-hz", "2.0"]
+
+  # Bidirectional (Serial Input + UDP Output)
+  nmea-serial-to-udp:
+    build: .
+    # image: ghcr.io/rise-maritime/keelson-connector-nmea:latest  
+    container_name: keelson-connector-nmea-serial-to-udp
     restart: unless-stopped
     network_mode: "host"
     privileged: true
     devices:
       - /dev/ttyUSB1:/dev/ttyUSB1
-    command: ["socat /dev/ttyUSB1,raw,echo=0,b115200 STDOUT | main --log-level 10 -r rise -e ssrs18 -s sealog --publish all"]
+    command: ["socat /dev/ttyUSB1,raw,echo=0,b115200 STDOUT | main_bidirectional --log-level 10 -r rise -e vessel1 -s gps/serial --publish all --output-udp 192.168.1.255:8501 --nmea-sentences GGA,RMC,VTG,ROT"]
+
+  # Multicast Output
+  nmea-output-multicast:
+    build: .
+    # image: ghcr.io/rise-maritime/keelson-connector-nmea:latest
+    container_name: keelson-connector-nmea-output-multicast  
+    restart: unless-stopped
+    network_mode: "host"
+    command: ["main_bidirectional", "--log-level", "10", "-r", "rise", "-e", "vessel1", "--output-only", "--output-multicast", "239.192.0.10:8503", "--nmea-sentences", "GGA,RMC,PASHR,HDT", "--nmea-rate-hz", "1.0"]
+
+  # Multiple Outputs (UDP + TCP)
+  nmea-multi-output:
+    build: .
+    # image: ghcr.io/rise-maritime/keelson-connector-nmea:latest
+    container_name: keelson-connector-nmea-multi-output
+    restart: unless-stopped  
+    network_mode: "host"
+    command: ["main_bidirectional", "--log-level", "10", "-r", "rise", "-e", "vessel1", "--output-only", "--output-udp", "192.168.1.100:8501", "--output-tcp", "192.168.1.200:8502", "--nmea-sentences", "GGA,RMC,VTG", "--nmea-rate-hz", "1.0"]
