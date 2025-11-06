@@ -1,4 +1,4 @@
 keelson==0.4.4rc20
 pynmea2==1.19.0
-skarv==0.2.0
+skarv==0.3.0
 eclipse-zenoh==1.6.2

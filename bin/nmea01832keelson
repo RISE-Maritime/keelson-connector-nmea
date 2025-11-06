@@ -30,8 +30,9 @@ import keelson
 
 from utils import (
     enclose_from_float,
-    enclose_from_int,
-    enclose_from_location,
+    enclose_from_integer,
+    enclose_from_lon_lat,
+    enclose_from_string,
     enclose_from_timestamp,
 )
 
@@ -41,7 +42,9 @@ PUBLISHERS: Dict[tuple, Any] = {}  # Cache for lazy publisher creation
 logger = logging.getLogger("nmea01832keelson")
 
 
-def get_or_create_publisher(session, realm: str, entity_id: str, subject: str, source_id: str):
+def get_or_create_publisher(
+    session, realm: str, entity_id: str, subject: str, source_id: str
+):
     """
     Get or create a Zenoh publisher for the specified subject.
 
@@ -55,29 +58,33 @@ def get_or_create_publisher(session, realm: str, entity_id: str, subject: str, s
     return PUBLISHERS[key]
 
 
-def publish_data(session, realm: str, entity_id: str, subject: str, value: bytes, source_id: str):
+def publish_data(
+    session, realm: str, entity_id: str, subject: str, value: bytes, source_id: str
+):
     """Publish data to a Keelson subject."""
     publisher = get_or_create_publisher(session, realm, entity_id, subject, source_id)
     publisher.put(value)
 
 
-def nmea_time_to_datetime(date_obj, time_obj) -> datetime:
+def nmea_time_to_nanoseconds(date_obj, time_obj) -> int:
     """
-    Combine NMEA date and time objects into a datetime.
+    Convert NMEA date and time objects to nanoseconds since epoch.
 
     Args:
         date_obj: datetime.date from NMEA sentence
         time_obj: datetime.time from NMEA sentence
 
     Returns:
-        datetime object in UTC
+        Nanoseconds since epoch (int), or None
     """
     if date_obj and time_obj:
-        return datetime.combine(date_obj, time_obj, tzinfo=timezone.utc)
+        dt = datetime.combine(date_obj, time_obj, tzinfo=timezone.utc)
+        return int(dt.timestamp() * 1_000_000_000)
     elif time_obj:
         # Use today's date if no date provided
         today = datetime.now(timezone.utc).date()
-        return datetime.combine(today, time_obj, tzinfo=timezone.utc)
+        dt = datetime.combine(today, time_obj, tzinfo=timezone.utc)
+        return int(dt.timestamp() * 1_000_000_000)
     return None
 
 
@@ -91,16 +98,17 @@ def handle_gga(msg, session, args):
     - location_fix_hdop (TimestampedFloat)
     - location_fix_undulation_m (TimestampedFloat)
     """
-    timestamp = nmea_time_to_datetime(None, msg.timestamp)
+    timestamp = nmea_time_to_nanoseconds(None, msg.timestamp)
 
     # Publish location fix if position is valid
     if msg.latitude and msg.longitude:
-        altitude = msg.altitude if msg.altitude else None
         publish_data(
-            session, args.realm, args.entity_id,
+            session,
+            args.realm,
+            args.entity_id,
             "location_fix",
-            enclose_from_location(msg.latitude, msg.longitude, altitude, timestamp),
-            args.source_id
+            enclose_from_lon_lat(msg.longitude, msg.latitude, timestamp),
+            args.source_id,
         )
 
     # Publish number of satellites used
@@ -108,10 +116,12 @@ def handle_gga(msg, session, args):
         try:
             num_sats = int(msg.num_sats)
             publish_data(
-                session, args.realm, args.entity_id,
+                session,
+                args.realm,
+                args.entity_id,
                 "location_fix_satellites_used",
-                enclose_from_int(num_sats, timestamp),
-                args.source_id
+                enclose_from_integer(num_sats, timestamp),
+                args.source_id,
             )
         except (ValueError, TypeError):
             logger.debug(f"Invalid num_sats value: {msg.num_sats}")
@@ -121,10 +131,12 @@ def handle_gga(msg, session, args):
         try:
             hdop = float(msg.horizontal_dil)
             publish_data(
-                session, args.realm, args.entity_id,
+                session,
+                args.realm,
+                args.entity_id,
                 "location_fix_hdop",
                 enclose_from_float(hdop, timestamp),
-                args.source_id
+                args.source_id,
             )
         except (ValueError, TypeError):
             logger.debug(f"Invalid HDOP value: {msg.horizontal_dil}")
@@ -134,10 +146,12 @@ def handle_gga(msg, session, args):
         try:
             undulation = float(msg.geo_sep)
             publish_data(
-                session, args.realm, args.entity_id,
+                session,
+                args.realm,
+                args.entity_id,
                 "location_fix_undulation_m",
                 enclose_from_float(undulation, timestamp),
-                args.source_id
+                args.source_id,
             )
         except (ValueError, TypeError):
             logger.debug(f"Invalid geoid separation value: {msg.geo_sep}")
@@ -152,15 +166,17 @@ def handle_rmc(msg, session, args):
     - speed_over_ground_knots (TimestampedFloat)
     - course_over_ground_deg (TimestampedFloat)
     """
-    timestamp = nmea_time_to_datetime(msg.datestamp, msg.timestamp)
+    timestamp = nmea_time_to_nanoseconds(msg.datestamp, msg.timestamp)
 
     # Publish location fix if position is valid and status is active
-    if msg.status == 'A' and msg.latitude and msg.longitude:
+    if msg.status == "A" and msg.latitude and msg.longitude:
         publish_data(
-            session, args.realm, args.entity_id,
+            session,
+            args.realm,
+            args.entity_id,
             "location_fix",
-            enclose_from_location(msg.latitude, msg.longitude, None, timestamp),
-            args.source_id
+            enclose_from_lon_lat(msg.longitude, msg.latitude, timestamp),
+            args.source_id,
         )
 
     # Publish speed over ground
@@ -168,10 +184,12 @@ def handle_rmc(msg, session, args):
         try:
             speed = float(msg.spd_over_grnd)
             publish_data(
-                session, args.realm, args.entity_id,
+                session,
+                args.realm,
+                args.entity_id,
                 "speed_over_ground_knots",
                 enclose_from_float(speed, timestamp),
-                args.source_id
+                args.source_id,
             )
         except (ValueError, TypeError):
             logger.debug(f"Invalid speed value: {msg.spd_over_grnd}")
@@ -181,10 +199,12 @@ def handle_rmc(msg, session, args):
         try:
             course = float(msg.true_course)
             publish_data(
-                session, args.realm, args.entity_id,
+                session,
+                args.realm,
+                args.entity_id,
                 "course_over_ground_deg",
                 enclose_from_float(course, timestamp),
-                args.source_id
+                args.source_id,
             )
         except (ValueError, TypeError):
             logger.debug(f"Invalid course value: {msg.true_course}")
@@ -201,10 +221,12 @@ def handle_hdt(msg, session, args):
         try:
             heading = float(msg.heading)
             publish_data(
-                session, args.realm, args.entity_id,
+                session,
+                args.realm,
+                args.entity_id,
                 "heading_true_north_deg",
                 enclose_from_float(heading),
-                args.source_id
+                args.source_id,
             )
         except (ValueError, TypeError):
             logger.debug(f"Invalid heading value: {msg.heading}")
@@ -223,10 +245,12 @@ def handle_vtg(msg, session, args):
         try:
             course = float(msg.true_track)
             publish_data(
-                session, args.realm, args.entity_id,
+                session,
+                args.realm,
+                args.entity_id,
                 "course_over_ground_deg",
                 enclose_from_float(course),
-                args.source_id
+                args.source_id,
             )
         except (ValueError, TypeError):
             logger.debug(f"Invalid true track value: {msg.true_track}")
@@ -236,10 +260,12 @@ def handle_vtg(msg, session, args):
         try:
             speed = float(msg.spd_over_grnd_kts)
             publish_data(
-                session, args.realm, args.entity_id,
+                session,
+                args.realm,
+                args.entity_id,
                 "speed_over_ground_knots",
                 enclose_from_float(speed),
-                args.source_id
+                args.source_id,
             )
         except (ValueError, TypeError):
             logger.debug(f"Invalid speed value: {msg.spd_over_grnd_kts}")
@@ -255,16 +281,23 @@ def handle_zda(msg, session, args):
     if msg.timestamp and msg.day and msg.month and msg.year:
         try:
             dt = datetime(
-                int(msg.year), int(msg.month), int(msg.day),
-                msg.timestamp.hour, msg.timestamp.minute, msg.timestamp.second,
+                int(msg.year),
+                int(msg.month),
+                int(msg.day),
+                msg.timestamp.hour,
+                msg.timestamp.minute,
+                msg.timestamp.second,
                 msg.timestamp.microsecond,
-                tzinfo=timezone.utc
+                tzinfo=timezone.utc,
             )
+            timestamp_ns = int(dt.timestamp() * 1_000_000_000)
             publish_data(
-                session, args.realm, args.entity_id,
+                session,
+                args.realm,
+                args.entity_id,
                 "timestamp",
-                enclose_from_timestamp(dt),
-                args.source_id
+                enclose_from_timestamp(timestamp_ns),
+                args.source_id,
             )
         except (ValueError, TypeError) as e:
             logger.debug(f"Invalid ZDA timestamp: {e}")
@@ -277,15 +310,17 @@ def handle_gll(msg, session, args):
     Publishes:
     - location_fix (LocationFix)
     """
-    timestamp = nmea_time_to_datetime(None, msg.timestamp)
+    timestamp = nmea_time_to_nanoseconds(None, msg.timestamp)
 
     # Only publish if status is valid
-    if msg.status == 'A' and msg.latitude and msg.longitude:
+    if msg.status == "A" and msg.latitude and msg.longitude:
         publish_data(
-            session, args.realm, args.entity_id,
+            session,
+            args.realm,
+            args.entity_id,
             "location_fix",
-            enclose_from_location(msg.latitude, msg.longitude, None, timestamp),
-            args.source_id
+            enclose_from_lon_lat(msg.longitude, msg.latitude, timestamp),
+            args.source_id,
         )
 
 
@@ -304,10 +339,12 @@ def handle_rot(msg, session, args):
             # Convert from degrees per minute to degrees per second
             rot_deg_per_sec = rot_deg_per_min / 60.0
             publish_data(
-                session, args.realm, args.entity_id,
+                session,
+                args.realm,
+                args.entity_id,
                 "yaw_rate_degps",
                 enclose_from_float(rot_deg_per_sec),
-                args.source_id
+                args.source_id,
             )
         except (ValueError, TypeError):
             logger.debug(f"Invalid ROT value: {msg.rate_of_turn}")
@@ -327,10 +364,12 @@ def handle_gsa(msg, session, args):
         try:
             hdop = float(msg.hdop)
             publish_data(
-                session, args.realm, args.entity_id,
+                session,
+                args.realm,
+                args.entity_id,
                 "location_fix_hdop",
                 enclose_from_float(hdop),
-                args.source_id
+                args.source_id,
             )
         except (ValueError, TypeError):
             logger.debug(f"Invalid HDOP value: {msg.hdop}")
@@ -340,10 +379,12 @@ def handle_gsa(msg, session, args):
         try:
             vdop = float(msg.vdop)
             publish_data(
-                session, args.realm, args.entity_id,
+                session,
+                args.realm,
+                args.entity_id,
                 "location_fix_vdop",
                 enclose_from_float(vdop),
-                args.source_id
+                args.source_id,
             )
         except (ValueError, TypeError):
             logger.debug(f"Invalid VDOP value: {msg.vdop}")
@@ -353,10 +394,12 @@ def handle_gsa(msg, session, args):
         try:
             pdop = float(msg.pdop)
             publish_data(
-                session, args.realm, args.entity_id,
+                session,
+                args.realm,
+                args.entity_id,
                 "location_fix_pdop",
                 enclose_from_float(pdop),
-                args.source_id
+                args.source_id,
             )
         except (ValueError, TypeError):
             logger.debug(f"Invalid PDOP value: {msg.pdop}")
@@ -379,7 +422,7 @@ def main():
     parser = argparse.ArgumentParser(
         prog="nmea01832keelson",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="Parse NMEA0183 sentences from STDIN and publish to Keelson/Zenoh"
+        description="Parse NMEA0183 sentences from STDIN and publish to Keelson/Zenoh",
     )
 
     # Logging
@@ -387,54 +430,46 @@ def main():
         "--log-level",
         type=int,
         default=logging.INFO,
-        help="Log level (10=DEBUG, 20=INFO, 30=WARNING, 40=ERROR)"
+        help="Log level (10=DEBUG, 20=INFO, 30=WARNING, 40=ERROR)",
     )
 
     # Zenoh configuration
     parser.add_argument(
-        "--mode", "-m",
-        choices=["peer", "client"],
-        help="Zenoh session mode"
+        "--mode", "-m", choices=["peer", "client"], help="Zenoh session mode"
     )
     parser.add_argument(
         "--connect",
         action="append",
-        help="Zenoh router endpoint to connect to (can be specified multiple times)"
+        help="Zenoh router endpoint to connect to (can be specified multiple times)",
     )
 
     # Keelson identifiers (required)
     parser.add_argument(
-        "-r", "--realm",
-        type=str,
-        required=True,
-        help="Keelson realm (base path)"
+        "-r", "--realm", type=str, required=True, help="Keelson realm (base path)"
     )
     parser.add_argument(
-        "-e", "--entity-id",
-        type=str,
-        required=True,
-        help="Entity identifier"
+        "-e", "--entity-id", type=str, required=True, help="Entity identifier"
     )
     parser.add_argument(
-        "-s", "--source-id",
+        "-s",
+        "--source-id",
         type=str,
         required=True,
-        help="Source identifier for published data"
+        help="Source identifier for published data",
     )
 
     # Optional features
     parser.add_argument(
         "--publish-raw",
         action="store_true",
-        help="Also publish raw NMEA sentences to 'raw' subject"
+        help="Also publish raw NMEA sentences to 'raw' subject",
     )
 
     args = parser.parse_args()
 
     # Setup logging
     logging.basicConfig(
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        level=args.log_level
+        format="%(asctime)s %(levelname)s %(name)s %(message)s", level=args.log_level
     )
     logging.captureWarnings(True)
 
@@ -463,7 +498,7 @@ def main():
                 line_count += 1
                 line = line.strip()
 
-                if not line or not line.startswith('$'):
+                if not line or not line.startswith("$"):
                     continue
 
                 try:
@@ -482,11 +517,14 @@ def main():
                     # Optionally publish raw NMEA
                     if args.publish_raw:
                         from utils import enclose_from_string
+
                         publish_data(
-                            session, args.realm, args.entity_id,
+                            session,
+                            args.realm,
+                            args.entity_id,
                             "raw",
                             enclose_from_string(line),
-                            args.source_id
+                            args.source_id,
                         )
 
                 except pynmea2.ParseError as e:
@@ -497,7 +535,9 @@ def main():
         except KeyboardInterrupt:
             logger.info("Interrupted by user")
         finally:
-            logger.info(f"Processed {line_count} lines, parsed {parsed_count} supported messages")
+            logger.info(
+                f"Processed {line_count} lines, parsed {parsed_count} supported messages"
+            )
 
 
 if __name__ == "__main__":

@@ -1,2 +1,4 @@
 -r requirements.txt
 zenoh-cli
+pytest>=8.0.0
+pytest-mock>=3.12.0
