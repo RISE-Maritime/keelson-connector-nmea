@@ -43,18 +43,12 @@ def create_zenoh_payload(payload_bytes: bytes):
 
 @pytest.fixture
 def setup_args():
-    """Setup ARGS global for tests and clear skarv vault."""
-    # Clear skarv vault before each test
-    skarv._vault.clear()
-
+    """Setup ARGS global for tests."""
     keelson2n2k.ARGS = Mock()
     keelson2n2k.ARGS.source_address = 1
     keelson2n2k.ARGS.priority = 2
     yield
     keelson2n2k.ARGS = None
-
-    # Clear skarv vault after each test
-    skarv._vault.clear()
 
 
 def test_subject_list_valid():

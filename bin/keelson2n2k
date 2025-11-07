@@ -72,6 +72,10 @@ def unpack(sample: skarv.Sample) -> Any:
 
 def output_json(json_str: str):
     """Output a JSON message to STDOUT with proper flushing."""
+    # Guard: Skip if json_str is None (e.g., when ARGS not set)
+    if json_str is None:
+        return
+
     sys.stdout.write(json_str + "\n")
     sys.stdout.flush()
     logger.debug(f"Output PGN")
@@ -79,6 +83,10 @@ def output_json(json_str: str):
 
 def create_nmea2000_message(pgn: int, pgn_id: str, description: str, fields: list) -> str:
     """Create a NMEA2000Message and return its JSON representation"""
+    # Guard: Skip if ARGS not set (e.g., when other test suites are running)
+    if ARGS is None:
+        return None
+
     msg = NMEA2000Message(
         PGN=pgn,
         id=pgn_id,
