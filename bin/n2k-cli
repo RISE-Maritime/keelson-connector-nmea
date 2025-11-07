@@ -47,12 +47,14 @@ logger = logging.getLogger("n2k-cli")
 
 class GatewayType(Enum):
     """Types of CAN gateway connections"""
+
     TCP = "tcp"
     USB = "usb"
 
 
 class Protocol(Enum):
     """CAN gateway protocols"""
+
     EBYTE = "ebyte"
     ACTISENSE = "actisense"
     YACHT_DEVICES = "yacht_devices"
@@ -258,13 +260,19 @@ async def main_async():
     )
 
     # Subcommands
-    subparsers = parser.add_subparsers(dest="mode", required=True, help="Operation mode")
+    subparsers = parser.add_subparsers(
+        dest="mode", required=True, help="Operation mode"
+    )
 
     # Read mode
-    read_parser = subparsers.add_parser("read", help="Read from CAN gateway, output JSON to STDOUT")
+    read_parser = subparsers.add_parser(
+        "read", help="Read from CAN gateway, output JSON to STDOUT"
+    )
 
     # Write mode
-    write_parser = subparsers.add_parser("write", help="Read JSON from STDIN, write to CAN gateway")
+    write_parser = subparsers.add_parser(
+        "write", help="Read JSON from STDIN, write to CAN gateway"
+    )
 
     # Bidirectional mode
     bidir_parser = subparsers.add_parser("bidirectional", help="Bidirectional mode")
