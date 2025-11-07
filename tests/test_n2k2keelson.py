@@ -185,4 +185,6 @@ def test_pgn_handler_registry():
 def test_pgn_128267_not_supported():
     """Test that PGN 128267 (Water Depth) is not supported"""
     # PGN 128267 was removed because depth_below_transducer_m doesn't exist in Keelson
-    assert 128267 not in n2k2keelson.PGN_HANDLERS, "PGN 128267 should not be in handler registry"
+    assert (
+        128267 not in n2k2keelson.PGN_HANDLERS
+    ), "PGN 128267 should not be in handler registry"

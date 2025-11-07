@@ -32,6 +32,7 @@ spec.loader.exec_module(keelson2n2k)
 
 # ==================== Helper to create Zenoh payloads ====================
 
+
 def create_zenoh_payload(payload_bytes: bytes):
     """Create a zenoh Payload object with to_bytes() method."""
     zenoh_payload = MagicMock()
@@ -40,6 +41,7 @@ def create_zenoh_payload(payload_bytes: bytes):
 
 
 # ==================== Fixtures ====================
+
 
 @pytest.fixture
 def setup_args():
@@ -56,7 +58,9 @@ def test_subject_list_valid():
     import keelson
 
     for subject in keelson2n2k.SUBJECTS:
-        assert subject in keelson._SUBJECTS, f"Subject '{subject}' is not a valid Keelson subject"
+        assert (
+            subject in keelson._SUBJECTS
+        ), f"Subject '{subject}' is not a valid Keelson subject"
 
 
 def test_no_invalid_wind_subjects():
@@ -65,28 +69,30 @@ def test_no_invalid_wind_subjects():
         "wind_speed_apparent_knots",
         "wind_angle_apparent_deg",
         "wind_speed_true_knots",
-        "wind_angle_true_deg"
+        "wind_angle_true_deg",
     ]
 
     for invalid in invalid_subjects:
-        assert invalid not in keelson2n2k.SUBJECTS, f"Invalid subject '{invalid}' found in SUBJECTS list"
+        assert (
+            invalid not in keelson2n2k.SUBJECTS
+        ), f"Invalid subject '{invalid}' found in SUBJECTS list"
 
 
 def test_no_invalid_env_subjects():
     """Test that we're not using the old invalid environmental subject names"""
-    invalid_subjects = [
-        "water_temperature_c",
-        "atmospheric_pressure_pa"
-    ]
+    invalid_subjects = ["water_temperature_c", "atmospheric_pressure_pa"]
 
     for invalid in invalid_subjects:
-        assert invalid not in keelson2n2k.SUBJECTS, f"Invalid subject '{invalid}' found in SUBJECTS list"
+        assert (
+            invalid not in keelson2n2k.SUBJECTS
+        ), f"Invalid subject '{invalid}' found in SUBJECTS list"
 
 
 def test_no_depth_subject():
     """Test that depth_below_transducer_m is not in subjects (doesn't exist in Keelson)"""
-    assert "depth_below_transducer_m" not in keelson2n2k.SUBJECTS, \
-        "depth_below_transducer_m is not a valid Keelson subject and should not be in SUBJECTS list"
+    assert (
+        "depth_below_transducer_m" not in keelson2n2k.SUBJECTS
+    ), "depth_below_transducer_m is not a valid Keelson subject and should not be in SUBJECTS list"
 
 
 def test_correct_wind_subjects():
@@ -125,15 +131,10 @@ def test_create_nmea2000_message():
     keelson2n2k.ARGS.source_address = 10
     keelson2n2k.ARGS.priority = 3
 
-    fields = [
-        NMEA2000Field(id="test", name="Test", value=123)
-    ]
+    fields = [NMEA2000Field(id="test", name="Test", value=123)]
 
     json_str = keelson2n2k.create_nmea2000_message(
-        129025,
-        "testPgn",
-        "Test PGN",
-        fields
+        129025, "testPgn", "Test PGN", fields
     )
 
     # Parse the JSON to verify structure
@@ -152,7 +153,9 @@ def test_generate_pgn_129025_position(setup_args):
     """Test PGN 129025 generation with LocationFix data"""
     # Create a LocationFix protobuf message
     location = LocationFix()
-    location.timestamp.FromNanoseconds(int(datetime.now(timezone.utc).timestamp() * 1_000_000_000))
+    location.timestamp.FromNanoseconds(
+        int(datetime.now(timezone.utc).timestamp() * 1_000_000_000)
+    )
     location.latitude = 59.123456
     location.longitude = 18.654321
 
@@ -185,11 +188,15 @@ def test_generate_pgn_130306_wind_data_no_conversion(setup_args):
     """Test PGN 130306 generation - verify wind speed stays in m/s (no conversion)"""
     # Create TimestampedFloat messages for apparent wind
     wind_speed = TimestampedFloat()
-    wind_speed.timestamp.FromNanoseconds(int(datetime.now(timezone.utc).timestamp() * 1_000_000_000))
+    wind_speed.timestamp.FromNanoseconds(
+        int(datetime.now(timezone.utc).timestamp() * 1_000_000_000)
+    )
     wind_speed.value = 10.0  # 10 m/s
 
     wind_angle = TimestampedFloat()
-    wind_angle.timestamp.FromNanoseconds(int(datetime.now(timezone.utc).timestamp() * 1_000_000_000))
+    wind_angle.timestamp.FromNanoseconds(
+        int(datetime.now(timezone.utc).timestamp() * 1_000_000_000)
+    )
     wind_angle.value = 45.0  # 45 degrees
 
     # Wrap in Keelson envelopes and put in skarv
@@ -226,18 +233,24 @@ def test_generate_pgn_130311_environmental_correct_subjects(setup_args):
     """Test PGN 130311 generation - verify correct subject names are used"""
     # Create TimestampedFloat messages
     water_temp = TimestampedFloat()
-    water_temp.timestamp.FromNanoseconds(int(datetime.now(timezone.utc).timestamp() * 1_000_000_000))
+    water_temp.timestamp.FromNanoseconds(
+        int(datetime.now(timezone.utc).timestamp() * 1_000_000_000)
+    )
     water_temp.value = 15.5  # Celsius
 
     air_pressure = TimestampedFloat()
-    air_pressure.timestamp.FromNanoseconds(int(datetime.now(timezone.utc).timestamp() * 1_000_000_000))
+    air_pressure.timestamp.FromNanoseconds(
+        int(datetime.now(timezone.utc).timestamp() * 1_000_000_000)
+    )
     air_pressure.value = 101325.0  # Pa
 
     # Wrap in Keelson envelopes and put in skarv with CORRECT subject names
     temp_payload = keelson.enclose(water_temp.SerializeToString())
     pressure_payload = keelson.enclose(air_pressure.SerializeToString())
 
-    skarv.put("water_temperature_celsius", create_zenoh_payload(temp_payload))  # CORRECT name
+    skarv.put(
+        "water_temperature_celsius", create_zenoh_payload(temp_payload)
+    )  # CORRECT name
     skarv.put("air_pressure_pa", create_zenoh_payload(pressure_payload))  # CORRECT name
 
     # Capture stdout
@@ -259,7 +272,9 @@ def test_generate_pgn_130311_environmental_correct_subjects(setup_args):
     assert temp_field["unit_of_measurement"] == "K"
 
     # Verify pressure
-    pressure_field = next(f for f in msg_dict["fields"] if f["id"] == "atmosphericPressure")
+    pressure_field = next(
+        f for f in msg_dict["fields"] if f["id"] == "atmosphericPressure"
+    )
     assert pressure_field["value"] == 101325.0
     assert pressure_field["unit_of_measurement"] == "Pa"
 
@@ -272,7 +287,9 @@ def test_roundtrip_location_fix(setup_args):
 
     # Create Keelson protobuf message
     location = LocationFix()
-    location.timestamp.FromNanoseconds(int(datetime.now(timezone.utc).timestamp() * 1_000_000_000))
+    location.timestamp.FromNanoseconds(
+        int(datetime.now(timezone.utc).timestamp() * 1_000_000_000)
+    )
     location.latitude = original_lat
     location.longitude = original_lon
 
@@ -312,11 +329,15 @@ def test_roundtrip_wind_data(setup_args):
 
     # Create Keelson protobuf messages
     wind_speed = TimestampedFloat()
-    wind_speed.timestamp.FromNanoseconds(int(datetime.now(timezone.utc).timestamp() * 1_000_000_000))
+    wind_speed.timestamp.FromNanoseconds(
+        int(datetime.now(timezone.utc).timestamp() * 1_000_000_000)
+    )
     wind_speed.value = original_speed_mps
 
     wind_angle = TimestampedFloat()
-    wind_angle.timestamp.FromNanoseconds(int(datetime.now(timezone.utc).timestamp() * 1_000_000_000))
+    wind_angle.timestamp.FromNanoseconds(
+        int(datetime.now(timezone.utc).timestamp() * 1_000_000_000)
+    )
     wind_angle.value = original_angle_deg
 
     # Encode to Keelson envelopes and put in skarv
@@ -339,7 +360,9 @@ def test_roundtrip_wind_data(setup_args):
 
     # CRITICAL: Verify wind speed stays in m/s (no conversion to knots)
     speed_field = next(f for f in msg_dict["fields"] if f["id"] == "windSpeed")
-    assert speed_field["value"] == pytest.approx(original_speed_mps)  # Should be same value
+    assert speed_field["value"] == pytest.approx(
+        original_speed_mps
+    )  # Should be same value
     assert speed_field["unit_of_measurement"] == "m/s"
 
     # Verify angle is converted to radians

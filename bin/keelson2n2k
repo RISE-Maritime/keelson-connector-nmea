@@ -81,7 +81,9 @@ def output_json(json_str: str):
     logger.debug(f"Output PGN")
 
 
-def create_nmea2000_message(pgn: int, pgn_id: str, description: str, fields: list) -> str:
+def create_nmea2000_message(
+    pgn: int, pgn_id: str, description: str, fields: list
+) -> str:
     """Create a NMEA2000Message and return its JSON representation"""
     # Guard: Skip if ARGS not set (e.g., when other test suites are running)
     if ARGS is None:
@@ -357,9 +359,7 @@ def generate_pgn_127257():
             )
 
     if fields:
-        json_str = create_nmea2000_message(
-            127257, "attitude", "Attitude", fields
-        )
+        json_str = create_nmea2000_message(127257, "attitude", "Attitude", fields)
         output_json(json_str)
 
 
@@ -416,9 +416,7 @@ def generate_pgn_130306():
         ),
     ]
 
-    json_str = create_nmea2000_message(
-        130306, "windData", "Wind Data", fields
-    )
+    json_str = create_nmea2000_message(130306, "windData", "Wind Data", fields)
     output_json(json_str)
 
 
@@ -448,9 +446,7 @@ def generate_pgn_127245():
         ),
     ]
 
-    json_str = create_nmea2000_message(
-        127245, "rudder", "Rudder", fields
-    )
+    json_str = create_nmea2000_message(127245, "rudder", "Rudder", fields)
     output_json(json_str)
 
 
