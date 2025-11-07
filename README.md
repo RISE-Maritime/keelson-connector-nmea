@@ -43,10 +43,9 @@ The NMEA2000 connectors support the following Parameter Group Numbers (PGNs):
 | **129029** | GNSS Position Data | `location_fix`, `location_fix_satellites_used`, `location_fix_hdop`, `location_fix_undulation_m` |
 | **127250** | Vessel Heading | `heading_true_north_deg` or `heading_magnetic_deg` |
 | **127257** | Attitude | `yaw_deg`, `pitch_deg`, `roll_deg` |
-| **130306** | Wind Data | `wind_speed_apparent_knots`, `wind_angle_apparent_deg` (or true variants) |
+| **130306** | Wind Data | `apparent_wind_speed_mps`, `apparent_wind_angle_deg` (or true variants) |
 | **127245** | Rudder | `rudder_angle_deg` |
-| **128267** | Water Depth | `depth_below_transducer_m` |
-| **130311** | Environmental Parameters | `water_temperature_c`, `atmospheric_pressure_pa` |
+| **130311** | Environmental Parameters | `water_temperature_celsius`, `air_pressure_pa` |
 
 ### NMEA2000 Architecture
 

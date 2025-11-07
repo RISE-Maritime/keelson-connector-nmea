@@ -14,7 +14,6 @@ Supported PGNs:
 - 127257: Attitude
 - 130306: Wind Data
 - 127245: Rudder
-- 128267: Water Depth
 - 130311: Environmental Parameters
 """
 
@@ -272,7 +271,7 @@ def handle_pgn_130306(msg: NMEA2000Message, session, realm: str, entity_id: str,
     Handle PGN 130306: Wind Data
 
     Fields: windSpeed, windAngle, reference
-    Keelson subjects: wind_speed_apparent_knots, wind_angle_apparent_deg (or true variants)
+    Keelson subjects: apparent_wind_speed_mps, apparent_wind_angle_deg (or true variants)
     """
     try:
         timestamp_dt = msg.timestamp if msg.timestamp else datetime.now(timezone.utc)
@@ -284,10 +283,8 @@ def handle_pgn_130306(msg: NMEA2000Message, session, realm: str, entity_id: str,
 
         for field in msg.fields:
             if field.id == "windSpeed" and field.value is not None:
+                # Wind speed is in m/s, Keelson expects m/s - no conversion needed
                 wind_speed = field.value
-                # Convert from m/s to knots if needed
-                if field.unit_of_measurement == "m/s":
-                    wind_speed = field.value * 1.94384
             elif field.id == "windAngle" and field.value is not None:
                 wind_angle = field.value
                 # Convert from radians to degrees if needed
@@ -301,13 +298,13 @@ def handle_pgn_130306(msg: NMEA2000Message, session, realm: str, entity_id: str,
         if reference and "true" in str(reference).lower():
             is_apparent = False
 
-        speed_subject = "wind_speed_apparent_knots" if is_apparent else "wind_speed_true_knots"
-        angle_subject = "wind_angle_apparent_deg" if is_apparent else "wind_angle_true_deg"
+        speed_subject = "apparent_wind_speed_mps" if is_apparent else "true_wind_speed_mps"
+        angle_subject = "apparent_wind_angle_deg" if is_apparent else "true_wind_angle_deg"
 
         if wind_speed is not None:
             envelope = enclose_from_float(wind_speed, timestamp)
             publish_to_keelson(session, realm, entity_id, speed_subject, source_id, envelope)
-            logger.debug(f"Published wind speed: {wind_speed} kts")
+            logger.debug(f"Published wind speed: {wind_speed} m/s")
 
         if wind_angle is not None:
             envelope = enclose_from_float(wind_angle, timestamp)
@@ -344,35 +341,12 @@ def handle_pgn_127245(msg: NMEA2000Message, session, realm: str, entity_id: str,
         logger.error(f"Error handling PGN 127245: {e}")
 
 
-def handle_pgn_128267(msg: NMEA2000Message, session, realm: str, entity_id: str, source_id: str):
-    """
-    Handle PGN 128267: Water Depth
-
-    Fields: depth
-    Keelson subject: depth_below_transducer_m
-    """
-    try:
-        timestamp_dt = msg.timestamp if msg.timestamp else datetime.now(timezone.utc)
-        timestamp = int(timestamp_dt.timestamp() * 1_000_000_000)
-
-        for field in msg.fields:
-            if field.id == "depth" and field.value is not None:
-                depth = field.value
-
-                envelope = enclose_from_float(depth, timestamp)
-                publish_to_keelson(session, realm, entity_id, "depth_below_transducer_m", source_id, envelope)
-                logger.debug(f"Published depth: {depth} m")
-
-    except Exception as e:
-        logger.error(f"Error handling PGN 128267: {e}")
-
-
 def handle_pgn_130311(msg: NMEA2000Message, session, realm: str, entity_id: str, source_id: str):
     """
     Handle PGN 130311: Environmental Parameters
 
     Fields: temperature (water), atmosphericPressure
-    Keelson subjects: water_temperature_c, atmospheric_pressure_pa
+    Keelson subjects: water_temperature_celsius, air_pressure_pa
     """
     try:
         timestamp_dt = msg.timestamp if msg.timestamp else datetime.now(timezone.utc)
@@ -386,15 +360,15 @@ def handle_pgn_130311(msg: NMEA2000Message, session, realm: str, entity_id: str,
                     temp = field.value - 273.15
 
                 envelope = enclose_from_float(temp, timestamp)
-                publish_to_keelson(session, realm, entity_id, "water_temperature_c", source_id, envelope)
+                publish_to_keelson(session, realm, entity_id, "water_temperature_celsius", source_id, envelope)
                 logger.debug(f"Published water temperature: {temp} C")
 
             elif field.id == "atmosphericPressure" and field.value is not None:
                 pressure = field.value
 
                 envelope = enclose_from_float(pressure, timestamp)
-                publish_to_keelson(session, realm, entity_id, "atmospheric_pressure_pa", source_id, envelope)
-                logger.debug(f"Published atmospheric pressure: {pressure} Pa")
+                publish_to_keelson(session, realm, entity_id, "air_pressure_pa", source_id, envelope)
+                logger.debug(f"Published air pressure: {pressure} Pa")
 
     except Exception as e:
         logger.error(f"Error handling PGN 130311: {e}")
@@ -409,7 +383,6 @@ PGN_HANDLERS: Dict[int, Callable] = {
     127257: handle_pgn_127257,  # Attitude
     130306: handle_pgn_130306,  # Wind Data
     127245: handle_pgn_127245,  # Rudder
-    128267: handle_pgn_128267,  # Water Depth
     130311: handle_pgn_130311,  # Environmental Parameters
 }
 

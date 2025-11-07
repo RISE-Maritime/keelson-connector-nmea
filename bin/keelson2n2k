@@ -14,7 +14,6 @@ Generated PGN types:
 - 127257: Attitude
 - 130306: Wind Data
 - 127245: Rudder
-- 128267: Water Depth
 - 130311: Environmental Parameters
 """
 
@@ -47,14 +46,13 @@ SUBJECTS = [
     "location_fix_hdop",
     "location_fix_satellites_used",
     "location_fix_undulation_m",
-    "wind_speed_apparent_knots",
-    "wind_angle_apparent_deg",
-    "wind_speed_true_knots",
-    "wind_angle_true_deg",
+    "apparent_wind_speed_mps",
+    "apparent_wind_angle_deg",
+    "true_wind_speed_mps",
+    "true_wind_angle_deg",
     "rudder_angle_deg",
-    "depth_below_transducer_m",
-    "water_temperature_c",
-    "atmospheric_pressure_pa",
+    "water_temperature_celsius",
+    "air_pressure_pa",
 ]
 
 ARGS = None
@@ -357,23 +355,23 @@ def generate_pgn_127257():
         output_json(json_str)
 
 
-@skarv.trigger("wind_speed_apparent_knots")
-@skarv.trigger("wind_angle_apparent_deg")
-@skarv.trigger("wind_speed_true_knots")
-@skarv.trigger("wind_angle_true_deg")
+@skarv.trigger("apparent_wind_speed_mps")
+@skarv.trigger("apparent_wind_angle_deg")
+@skarv.trigger("true_wind_speed_mps")
+@skarv.trigger("true_wind_angle_deg")
 def generate_pgn_130306():
     """
     Generate PGN 130306: Wind Data
     Triggered when wind data updates
     """
     # Prefer apparent wind, fall back to true wind
-    speed_sample = skarv.get("wind_speed_apparent_knots")
-    angle_sample = skarv.get("wind_angle_apparent_deg")
+    speed_sample = skarv.get("apparent_wind_speed_mps")
+    angle_sample = skarv.get("apparent_wind_angle_deg")
     reference = "Apparent"
 
     if not speed_sample or not angle_sample:
-        speed_sample = skarv.get("wind_speed_true_knots")
-        angle_sample = skarv.get("wind_angle_true_deg")
+        speed_sample = skarv.get("true_wind_speed_mps")
+        angle_sample = skarv.get("true_wind_angle_deg")
         reference = "True (ground referenced)"
 
     if not speed_sample or not angle_sample:
@@ -386,7 +384,8 @@ def generate_pgn_130306():
         return
 
     # Convert to appropriate units
-    speed_ms = speed.value / 1.94384  # knots to m/s
+    # Speed is already in m/s from Keelson - no conversion needed
+    speed_ms = speed.value
     angle_rad = angle.value * 3.14159265359 / 180.0  # deg to rad
 
     fields = [
@@ -447,44 +446,15 @@ def generate_pgn_127245():
     output_json(json_str)
 
 
-@skarv.trigger("depth_below_transducer_m")
-def generate_pgn_128267():
-    """
-    Generate PGN 128267: Water Depth
-    Triggered when depth updates
-    """
-    depth_sample = skarv.get("depth_below_transducer_m")
-    if not depth_sample:
-        return
-
-    depth = unpack(depth_sample)
-    if not depth:
-        return
-
-    fields = [
-        NMEA2000Field(
-            id="depth",
-            name="Depth",
-            value=depth.value,
-            unit_of_measurement="m",
-        ),
-    ]
-
-    json_str = create_nmea2000_message(
-        128267, "waterDepth", "Water Depth", fields
-    )
-    output_json(json_str)
-
-
-@skarv.trigger("water_temperature_c")
-@skarv.trigger("atmospheric_pressure_pa")
+@skarv.trigger("water_temperature_celsius")
+@skarv.trigger("air_pressure_pa")
 def generate_pgn_130311():
     """
     Generate PGN 130311: Environmental Parameters
     Triggered when environmental data updates
     """
-    temp_sample = skarv.get("water_temperature_c")
-    pressure_sample = skarv.get("atmospheric_pressure_pa")
+    temp_sample = skarv.get("water_temperature_celsius")
+    pressure_sample = skarv.get("air_pressure_pa")
 
     # Need at least one value
     if not temp_sample and not pressure_sample:

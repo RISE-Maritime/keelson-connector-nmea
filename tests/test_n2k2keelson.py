@@ -176,7 +176,13 @@ def test_process_message_invalid_json(mock_session):
 
 def test_pgn_handler_registry():
     """Test that PGN handler registry contains expected PGNs"""
-    expected_pgns = [129025, 129026, 129029, 127250, 127257, 130306, 127245, 128267, 130311]
+    expected_pgns = [129025, 129026, 129029, 127250, 127257, 130306, 127245, 130311]
 
     for pgn in expected_pgns:
         assert pgn in n2k2keelson.PGN_HANDLERS, f"PGN {pgn} not in handler registry"
+
+
+def test_pgn_128267_not_supported():
+    """Test that PGN 128267 (Water Depth) is not supported"""
+    # PGN 128267 was removed because depth_below_transducer_m doesn't exist in Keelson
+    assert 128267 not in n2k2keelson.PGN_HANDLERS, "PGN 128267 should not be in handler registry"
