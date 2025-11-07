@@ -19,6 +19,25 @@ jobs:
         uses: azohra/shell-linter@latest
 
 
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements_dev.txt
+    - name: Run pytest
+      run: |
+        python -m pytest tests/ -v
+
   linting-python:
     runs-on: ubuntu-latest
     steps:
@@ -34,7 +53,4 @@ jobs:
     - name: Run black
       run: |
         black --check bin/* tests/
-    - name: Run pytest
-      run: |
-        python -m pytest tests/
 
