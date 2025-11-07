@@ -1,4 +1,5 @@
 keelson==0.4.4
 pynmea2==1.19.0
+nmea2000>=2025.10.13
 skarv==0.3.0
 eclipse-zenoh==1.6.2

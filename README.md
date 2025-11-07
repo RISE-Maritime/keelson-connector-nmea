@@ -1,15 +1,21 @@
-# Keelson NMEA0183 Connector
+# Keelson NMEA Connector
 
-Bidirectional connectors between NMEA0183 sentences and the Keelson/Zenoh maritime data protocol.
+Bidirectional connectors between NMEA0183/NMEA2000 maritime protocols and the Keelson/Zenoh data distribution framework.
 
 ## Overview
 
-This repository provides two command-line utilities for converting between NMEA0183 maritime data format and the Keelson protocol on a Zenoh messaging bus:
+This repository provides command-line utilities for converting between NMEA maritime data formats (both NMEA0183 and NMEA2000) and the Keelson protocol on a Zenoh messaging bus:
 
+### NMEA0183 Connectors
 - **`nmea01832keelson`** - Reads NMEA0183 sentences from STDIN and publishes structured data to Keelson/Zenoh
 - **`keelson2nmea0183`** - Subscribes to Keelson/Zenoh subjects and outputs NMEA0183 sentences to STDOUT
 
-These tools enable integration between legacy NMEA0183-based systems (GPS receivers, chart plotters, autopilots) and modern Zenoh-based maritime platforms.
+### NMEA2000 (N2K) Connectors
+- **`n2k-cli`** - Bidirectional bridge between NMEA2000 CAN gateways and JSON streams
+- **`n2k2keelson`** - Reads NMEA2000 JSON from STDIN and publishes structured data to Keelson/Zenoh
+- **`keelson2n2k`** - Subscribes to Keelson/Zenoh subjects and outputs NMEA2000 JSON to STDOUT
+
+These tools enable integration between legacy NMEA-based systems (GPS receivers, chart plotters, autopilots, CAN networks) and modern Zenoh-based maritime platforms.
 
 ## Supported NMEA0183 Sentence Types
 
@@ -25,6 +31,37 @@ Both connectors support the following 8 essential NMEA sentence types:
 | **GLL** | Geographic Position Latitude/Longitude | `location_fix` |
 | **ROT** | Rate of Turn | `yaw_rate_degps` |
 | **GSA** | GNSS DOP and Active Satellites | `location_fix_hdop`, `location_fix_vdop`, `location_fix_pdop` |
+
+## Supported NMEA2000 PGNs
+
+The NMEA2000 connectors support the following Parameter Group Numbers (PGNs):
+
+| PGN | Name | Keelson Subjects |
+|-----|------|------------------|
+| **129025** | Position, Rapid Update | `location_fix` |
+| **129026** | COG & SOG, Rapid Update | `course_over_ground_deg`, `speed_over_ground_knots` |
+| **129029** | GNSS Position Data | `location_fix`, `location_fix_satellites_used`, `location_fix_hdop`, `location_fix_undulation_m` |
+| **127250** | Vessel Heading | `heading_true_north_deg` or `heading_magnetic_deg` |
+| **127257** | Attitude | `yaw_deg`, `pitch_deg`, `roll_deg` |
+| **130306** | Wind Data | `wind_speed_apparent_knots`, `wind_angle_apparent_deg` (or true variants) |
+| **127245** | Rudder | `rudder_angle_deg` |
+| **128267** | Water Depth | `depth_below_transducer_m` |
+| **130311** | Environmental Parameters | `water_temperature_c`, `atmospheric_pressure_pa` |
+
+### NMEA2000 Architecture
+
+The NMEA2000 connectors use a **three-component architecture** with JSON as the interchange format:
+
+```
+CAN Gateway ←→ n2k-cli (JSON bridge) ←→ n2k2keelson/keelson2n2k ←→ Keelson/Zenoh
+```
+
+**Why this design?**
+- **Hardware abstraction**: n2k-cli handles all CAN gateway communication (TCP, USB, various protocols)
+- **Composability**: Follows Unix philosophy - can pipe data through any tool
+- **Testability**: Easy to test with mock JSON data
+- **Reusability**: Components can be used independently or with other systems
+- **Consistency**: Same STDIN/STDOUT pattern as NMEA0183 connectors
 
 ## Installation
 
@@ -43,6 +80,7 @@ The key dependencies are:
 - `eclipse-zenoh` - Zenoh messaging library
 - `keelson` - Keelson protocol implementation
 - `pynmea2` - NMEA0183 parsing and generation
+- `nmea2000` - NMEA2000 PGN encoding/decoding library
 - `skarv` - In-memory data vault for state management
 
 ## Usage
@@ -180,6 +218,178 @@ keelson2nmea0183 \
   --source_id_location_fix "gps/**"
 ```
 
+### NMEA2000 CAN Gateway Bridge (`n2k-cli`)
+
+Bidirectional bridge between NMEA2000 CAN gateways and JSON streams. This tool provides the hardware abstraction layer for NMEA2000 communication.
+
+#### Supported Gateways
+
+- **TCP**: EBYTE (ECAN-E01/W01), Actisense (W2K-1), Yacht Devices (YDWG-02)
+- **USB**: Waveshare USB-CAN-A
+
+#### Read Mode (CAN → JSON)
+
+```bash
+# Read from EBYTE gateway
+n2k-cli read \
+  --gateway-type tcp \
+  --host 192.168.0.46 \
+  --port 8881 \
+  --protocol ebyte
+
+# Read from Actisense gateway
+n2k-cli read \
+  --gateway-type tcp \
+  --host 192.168.1.100 \
+  --port 10110 \
+  --protocol actisense
+
+# Read from USB gateway
+n2k-cli read \
+  --gateway-type usb \
+  --port /dev/ttyUSB0 \
+  --protocol waveshare
+
+# Filter specific PGNs
+n2k-cli read \
+  --gateway-type tcp \
+  --host 192.168.0.46 \
+  --port 8881 \
+  --protocol ebyte \
+  --include-pgns 129025,129026,127250
+```
+
+#### Write Mode (JSON → CAN)
+
+```bash
+# Write JSON messages to CAN gateway
+cat nmea2000_messages.json | n2k-cli write \
+  --gateway-type tcp \
+  --host 192.168.0.46 \
+  --port 8881 \
+  --protocol ebyte
+```
+
+### NMEA2000 → Keelson (`n2k2keelson`)
+
+Reads NMEA2000 messages in JSON format from standard input and publishes to Keelson/Zenoh.
+
+#### Basic Usage
+
+```bash
+# Read from CAN gateway and publish to Keelson
+n2k-cli read --gateway-type tcp --host 192.168.0.46 --port 8881 --protocol ebyte \
+  | n2k2keelson -r "vessel/test_boat" -e "sensors" -s "n2k/primary"
+```
+
+#### Command-Line Options
+
+```
+Required Arguments:
+  -r, --realm REALM              Keelson realm (e.g., "vessel/sv_colibri")
+  -e, --entity-id ENTITY_ID      Entity identifier (e.g., "sensors")
+  -s, --source-id SOURCE_ID      Source identifier (e.g., "n2k/primary")
+
+Optional Arguments:
+  --log-level LEVEL              Log level: 10=DEBUG, 20=INFO, 30=WARNING, 40=ERROR (default: 20)
+  --mode {peer,client}           Zenoh session mode (default: peer)
+  --connect ENDPOINT             Zenoh router endpoint (can be used multiple times)
+  --publish-raw                  Also publish raw JSON messages to 'raw' subject
+```
+
+#### Examples
+
+**Connect to specific Zenoh router:**
+```bash
+n2k-cli read --gateway-type tcp --host 192.168.0.46 --port 8881 --protocol ebyte \
+  | n2k2keelson \
+      -r "vessel/sv_colibri" \
+      -e "sensors" \
+      -s "n2k/primary" \
+      --mode client \
+      --connect "tcp/192.168.1.100:7447"
+```
+
+**Debug with tee:**
+```bash
+n2k-cli read --gateway-type tcp --host 192.168.0.46 --port 8881 --protocol ebyte \
+  | tee /tmp/n2k-debug.json \
+  | n2k2keelson -r "vessel/sv_colibri" -e "sensors" -s "n2k/primary"
+
+# In another terminal:
+tail -f /tmp/n2k-debug.json | jq .
+```
+
+**Publish raw JSON for debugging:**
+```bash
+n2k-cli read --gateway-type tcp --host 192.168.0.46 --port 8881 --protocol ebyte \
+  | n2k2keelson \
+      -r "vessel/sv_colibri" \
+      -e "sensors" \
+      -s "n2k/primary" \
+      --publish-raw
+```
+
+### Keelson → NMEA2000 (`keelson2n2k`)
+
+Subscribes to Keelson/Zenoh subjects and outputs NMEA2000 messages in JSON format to standard output.
+
+#### Basic Usage
+
+```bash
+# Subscribe to Keelson and output JSON to CAN gateway
+keelson2n2k -r "vessel/sv_colibri" -e "sensors" \
+  | n2k-cli write --gateway-type tcp --host 192.168.0.46 --port 8881 --protocol ebyte
+```
+
+#### Command-Line Options
+
+```
+Required Arguments:
+  -r, --realm REALM              Keelson realm (e.g., "vessel/sv_colibri")
+  -e, --entity-id ENTITY_ID      Entity identifier (e.g., "sensors")
+
+Optional Arguments:
+  --log-level LEVEL              Log level: 10=DEBUG, 20=INFO, 30=WARNING, 40=ERROR (default: 20)
+  --mode {peer,client}           Zenoh session mode (default: peer)
+  --connect ENDPOINT             Zenoh router endpoint (can be used multiple times)
+  --source-address ADDRESS       NMEA2000 source address (0-253, default: 1)
+  --priority PRIORITY            Message priority (0-7, lower is higher, default: 2)
+  --source_id_SUBJECT PATTERN    Source pattern for specific subject (default: "**")
+```
+
+#### Examples
+
+**Change NMEA2000 source address:**
+```bash
+keelson2n2k \
+  -r "vessel/sv_colibri" \
+  -e "autopilot" \
+  --source-address 10 \
+  | n2k-cli write --gateway-type tcp --host 192.168.0.46 --port 8881 --protocol ebyte
+```
+
+**Filter by specific sources:**
+```bash
+keelson2n2k \
+  -r "vessel/sv_colibri" \
+  -e "sensors" \
+  --source_id_location_fix "gps/**" \
+  --source_id_heading_true_north_deg "compass/primary" \
+  | n2k-cli write --gateway-type tcp --host 192.168.0.46 --port 8881 --protocol ebyte
+```
+
+**Bidirectional setup (separate terminals):**
+```bash
+# Terminal 1: N2K → Keelson
+n2k-cli read --gateway-type tcp --host 192.168.0.46 --port 8881 --protocol ebyte \
+  | n2k2keelson -r "vessel/sv_colibri" -e "sensors" -s "n2k/primary"
+
+# Terminal 2: Keelson → N2K
+keelson2n2k -r "vessel/sv_colibri" -e "autopilot" \
+  | n2k-cli write --gateway-type tcp --host 192.168.0.46 --port 8881 --protocol ebyte
+```
+
 ## Keelson Subject Mapping
 
 ### NMEA → Keelson Mappings
@@ -291,13 +501,20 @@ Zenoh Subscribe → skarv Vault → Event Triggers → Generate NMEA (pynmea2) �
 ```
 keelson-connector-nmea/
 ├── bin/
-│   ├── nmea01832keelson       # NMEA → Keelson script
-│   ├── keelson2nmea0183        # Keelson → NMEA script
-│   └── utils.py                # Shared helper functions
-├── legacy/                     # Previous implementation (deprecated)
-├── requirements.txt            # Python dependencies
-├── requirements_dev.txt        # Development dependencies
-└── README.md                   # This file
+│   ├── nmea01832keelson       # NMEA0183 → Keelson script
+│   ├── keelson2nmea0183       # Keelson → NMEA0183 script
+│   ├── n2k-cli                # NMEA2000 CAN gateway bridge
+│   ├── n2k2keelson            # NMEA2000 → Keelson script
+│   ├── keelson2n2k            # Keelson → NMEA2000 script
+│   └── utils.py               # Shared helper functions
+├── tests/
+│   ├── test_nmea2keelson.py   # NMEA0183 tests
+│   ├── test_keelson2nmea.py   # NMEA0183 tests
+│   ├── test_n2k_cli.py        # NMEA2000 CLI tests
+│   └── test_n2k2keelson.py    # NMEA2000 connector tests
+├── requirements.txt           # Python dependencies
+├── requirements_dev.txt       # Development dependencies
+└── README.md                  # This file
 ```
 
 ### Key Design Patterns
