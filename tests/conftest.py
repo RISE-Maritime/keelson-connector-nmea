@@ -128,16 +128,35 @@ def sample_timestamped_int_payload(sample_timestamped_int):
     return keelson.enclose(sample_timestamped_int.SerializeToString())
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def clear_skarv():
-    """Clear skarv vault between tests."""
+    """
+    Clear skarv vault and caches before and after tests to ensure test isolation.
+
+    This fixture is automatically used for all tests to prevent state leakage
+    between tests when multiple test modules are run together.
+
+    Clears:
+    - _vault: The main data store
+    - _find_matching_subscribers cache
+    - _find_matching_middlewares cache
+    - _find_matching_triggers cache
+    """
     import skarv
 
-    # skarv clears automatically on import, but we can explicitly clear if needed
-    # This fixture ensures isolation between tests
+    # Clear vault and caches before test
+    skarv._vault.clear()
+    skarv._find_matching_subscribers.cache_clear()
+    skarv._find_matching_middlewares.cache_clear()
+    skarv._find_matching_triggers.cache_clear()
+
     yield
-    # Cleanup after test if skarv has a clear method
-    # (skarv 0.3.0 doesn't expose a clear API, so we rely on process isolation)
+
+    # Clear vault and caches after test
+    skarv._vault.clear()
+    skarv._find_matching_subscribers.cache_clear()
+    skarv._find_matching_middlewares.cache_clear()
+    skarv._find_matching_triggers.cache_clear()
 
 
 @pytest.fixture
