@@ -1,0 +1,13 @@
+services:
+
+  nmea-0183-yden:
+    build: .
+    container_name: keelson-connector-nmea-yden-0183
+    restart: unless-stopped
+    network_mode: "host"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+    command: ["bash -c 'socat UDP-RECV:1456,reuseaddr STDOUT | nmea01832keelson --log-level 10 -r rise -e usv -s nmea/yden --publish-raw'"]

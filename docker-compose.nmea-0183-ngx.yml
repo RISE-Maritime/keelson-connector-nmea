@@ -1,0 +1,16 @@
+services:
+
+  nmea-serial-0183:
+    build: .
+    container_name: keelson-connector-nmea-serial-NGX-01-test
+    restart: unless-stopped
+    network_mode: "host"
+    privileged: true
+    devices:
+      - /dev/ttyUSB0:/dev/ttyUSB0
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+    command: ["socat -u /dev/ttyUSB0,raw,echo=0,b4800 - | nmea01832keelson --log-level 10 -r rise -e usv -s nmea/serial --publish-raw"]
